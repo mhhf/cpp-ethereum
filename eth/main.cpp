@@ -269,11 +269,47 @@ int main(int argc, char** argv)
 				string address;
 				cin >> address;
 				auto mem = c.state().contractMemory(h160(fromUserHex(address)));
-
+				
+				unsigned numerics = 0;
+				bool unexpectedNumeric = false;
+				u256 next = 0;
+				
 				for (auto i : mem)
 				{
-					cout << hex << "\t" << i.first << "\t" << i.second << endl;
+					if (next < i.first)
+					{
+						unsigned j;
+						for (j = 0; j <= numerics && next + j < i.first; ++j) {
+							cout << (j < numerics || unexpectedNumeric ? " 0" : " STOP");
+						}
+						unexpectedNumeric = false;
+						numerics -= min(numerics, j);
+						if (next + j < i.first) {
+							cout << " ...\n@" << showbase << hex << i.first << "    ";
+						}
+					}
+					else if (!next)
+					{
+						cout << "@" << showbase << hex << i.first << "    ";
+					}
+					auto iit = c_instructionInfo.find((Instruction)(unsigned)i.second);
+					if (numerics || iit == c_instructionInfo.end() || (u256)(unsigned)iit->first != i.second)	// not an instruction or expecting an argument...
+					{
+						if (numerics)
+							numerics--;
+						else
+							unexpectedNumeric = true;
+						cout << " " << showbase << hex << i.second;
+					}
+					else
+					{
+						auto const& ii = iit->second;
+						cout << " *" << ii.name << "*";
+						numerics = ii.additional;
+					}
+					next = i.first + 1;
 				}
+				cout << endl;
 			}
 			else if (cmd == "transact")
 			{
