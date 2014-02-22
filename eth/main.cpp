@@ -384,7 +384,7 @@ int main(int argc, char** argv)
 			else if (cmd == "contract:send")
 			{
 				u256 amount;
-        string contractAddr;
+				string contractAddr;
 				cin >> amount >> contractAddr;
 				Address dest = h160(fromUserHex(contractAddr));
 
@@ -393,9 +393,9 @@ int main(int argc, char** argv)
 				string data(buffer);
 				
 				u256s txdata;
-        txdata.push_back(3);
-        txdata.push_back(7);
-				cout << "sent: " << amount << " to " << contractAddr << " : " << data << endl;
+				txdata.push_back(3);
+				txdata.push_back(7);
+				cout << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
 				
 				c.transact(us.secret(), dest, amount, txdata);
 			}
