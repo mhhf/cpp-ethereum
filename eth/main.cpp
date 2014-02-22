@@ -248,12 +248,33 @@ int main(int argc, char** argv)
 			else if (cmd == "balance")
 			{
 				u256 balance = c.state().balance(us.address());
-        string value  = formatBalance(balance).c_str();
+				string value  = formatBalance(balance);
 				cout << endl;
 				cout << "Current balance: ";
 				cout << value << endl;
 				cout << "===" << endl;
-			}	
+			}
+			else if (cmd == "balanceof")
+			{
+				string owner;
+				cin >> owner;
+				u256 balance = c.state().balance(h160(fromUserHex(owner)));
+				cout << endl;
+				cout << "Current balance: ";
+				cout << formatBalance(balance) << endl;
+				cout << "===" << endl;
+			}
+			else if (cmd == "memory")
+			{
+				string address;
+				cin >> address;
+				auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+
+				for (auto i : mem)
+				{
+					cout << hex << "\t" << i.first << "\t" << i.second << endl;
+				}
+			}
 			else if (cmd == "transact")
 			{
 				string sechex;
@@ -278,20 +299,28 @@ int main(int argc, char** argv)
 					cout << c.peers()[i].host << ":" << c.peers()[i].port << endl;
 				}
 			}
+			else if (cmd == "fee")
+			{
+				cout << formatBalance(c.state().fee()) << endl;
+			}
 			else if (cmd == "exit")
 			{
 				break;
 			}
-
-      else if (cmd == "contract")
-      {
-        string data;
+			else if (cmd == "contract")
+			{
 				u256 amount;
-				cin >> amount >> data;
-				u256s contract = eth::assemble(data, false);
-				c.transact(us.secret(), Address(), amount, contract);
-      }
+				cin >> amount;
 
+				char buffer[256];
+				cin.getline(buffer, 256);
+				string data(buffer);
+				
+				u256s contract = eth::assemble(data, false);
+				cout << "sent: " << amount << " : " << data << endl;
+				
+				c.transact(us.secret(), Address(), amount, contract);
+			}
 			else if (cmd == "block:list")
 			{
 				auto const& bc = c.blockChain();
@@ -300,7 +329,11 @@ int main(int argc, char** argv)
 					auto d = bc.details(h);
 					auto blockData = bc.block(h);
 					auto block = RLP(blockData);
-					cout << d.number << ":\t" << h << " (" << block[1].itemCount() << ")" << endl;
+					cout << d.number << ":\t" << h;
+					if (block[1].itemCount() > 0) {
+						cout << " (" << block[1].itemCount() << ")";
+					}
+					cout << endl;
 				}
 			}
 			else if (cmd == "block:info")
