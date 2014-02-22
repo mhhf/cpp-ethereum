@@ -254,6 +254,24 @@ int main(int argc, char** argv)
 				cout << value << endl;
 				cout << "===" << endl;
 			}
+			else if (cmd == "pending")
+			{
+				for (Transaction const& t : c.pending())
+				{
+					if (t.receiveAddress)
+					{
+						bool isContract = c.state().isContractAddress(t.receiveAddress);
+						cout << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
+							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+					}
+					else
+					{
+						cout << t.safeSender().abridged() << "+> "
+							<< right160(t.sha3()) << ": "
+							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+					}
+				}
+			}
 			else if (cmd == "balanceof")
 			{
 				string owner;
