@@ -29,6 +29,7 @@
 #include "BlockChain.h"
 #include "State.h"
 #include "FileSystem.h"
+#include "Instruction.h"
 using namespace std;
 using namespace eth;
 
@@ -269,6 +270,15 @@ int main(int argc, char** argv)
 			{
 				break;
 			}
+      else if (cmd == "contract")
+      {
+        string data;
+				u256 amount;
+				cin >> amount >> data;
+				u256s contract = eth::assemble(data, false);
+				c.transact(us.secret(), Address(), amount, contract);
+      }
+       
 		}
 	}
 	else
