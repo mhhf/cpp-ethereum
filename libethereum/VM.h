@@ -496,7 +496,7 @@ template <class Ext> void eth::VM::go(Ext& _ext, uint64_t _steps)
 		{
 			require(2);
 #ifdef __clang__
-			auto mFinder = m_temp.find(stack.back());
+			auto mFinder = m_temp.find(m_stack.back());
 			if (mFinder == m_temp.end())
 				m_temp.insert(std::make_pair(m_stack.back(), m_stack[m_stack.size() - 2]));
 			else
