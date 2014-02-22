@@ -20,6 +20,10 @@
  * Ethereum client.
  */
 
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
+
 #include <thread>
 #include <chrono>
 #include <fstream>
@@ -30,6 +34,7 @@
 #include "State.h"
 #include "FileSystem.h"
 #include "Instruction.h"
+#include "RLP.h"
 using namespace std;
 using namespace eth;
 
@@ -266,10 +271,17 @@ int main(int argc, char** argv)
 				Address dest = h160(fromUserHex(rechex));
 				c.transact(us.secret(), dest, amount);
 			}
+			else if (cmd == "peers")
+			{
+				for (size_t i = 0; i < c.peers().size(); i++) {
+					cout << c.peers()[i].host << ":" << c.peers()[i].port << endl;
+				}
+			}
 			else if (cmd == "exit")
 			{
 				break;
 			}
+
       else if (cmd == "contract")
       {
         string data;
@@ -278,7 +290,66 @@ int main(int argc, char** argv)
 				u256s contract = eth::assemble(data, false);
 				c.transact(us.secret(), Address(), amount, contract);
       }
-       
+
+			else if (cmd == "block:list")
+			{
+				auto const& bc = c.blockChain();
+				for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+				{
+					auto d = bc.details(h);
+					auto blockData = bc.block(h);
+					auto block = RLP(blockData);
+					cout << d.number << ":\t" << h << " (" << block[1].itemCount() << ")" << endl;
+				}
+			}
+			else if (cmd == "block:info")
+			{
+				int blocknr;
+				cin >> blocknr;
+				
+				auto const& bc = c.blockChain();
+				for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+				{
+					auto d = bc.details(h);
+					if (d.number == blocknr) {
+						cout << d.number << ":\t" << h << endl;
+						
+						// print the block info
+						auto blockData = bc.block(h);
+						auto block = RLP(blockData);
+						BlockInfo info(blockData);
+
+						cout << "Timestamp: " << info.timestamp << endl;
+						cout << "Transactions: " << block[1].itemCount() << endl;
+
+						// block transactions
+						for (auto const& i : block[1])
+						{
+							Transaction t(i.data());
+							
+
+							if (t.receiveAddress)
+							{
+								bool isContract = c.state().isContractAddress(t.receiveAddress);
+								cout << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
+									<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+							}
+							else
+							{
+								cout << t.safeSender().abridged() << "+> "
+									<< right160(t.sha3()) << ": "
+									<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+							}
+						}
+
+						break;
+					}
+				}
+			}
+			else
+			{
+				cout << "unknown command: " << cmd << endl;
+			}
 		}
 	}
 	else
