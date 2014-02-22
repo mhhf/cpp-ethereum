@@ -361,7 +361,7 @@ int main(int argc, char** argv)
 			{
 				auto const& bc = c.blockChain();
         auto diff = BlockInfo(bc.block()).difficulty;
-				cout <<  << endl;
+				cout << toLog2(diff) << endl;
 			}
 			else if (cmd == "exit")
 			{
