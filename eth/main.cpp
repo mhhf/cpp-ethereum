@@ -303,11 +303,17 @@ int main(int argc, char** argv)
 			{
 				cout << formatBalance(c.state().fee()) << endl;
 			}
+			else if (cmd == "difficulty")
+			{
+				auto const& bc = c.blockChain();
+        auto diff = BlockInfo(bc.block()).difficulty;
+				cout <<  << endl;
+			}
 			else if (cmd == "exit")
 			{
 				break;
 			}
-			else if (cmd == "contract")
+			else if (cmd == "contract:create")
 			{
 				u256 amount;
 				cin >> amount;
@@ -320,6 +326,24 @@ int main(int argc, char** argv)
 				cout << "sent: " << amount << " : " << data << endl;
 				
 				c.transact(us.secret(), Address(), amount, contract);
+			}
+			else if (cmd == "contract:send")
+			{
+				u256 amount;
+        string contractAddr;
+				cin >> amount >> contractAddr;
+				Address dest = h160(fromUserHex(contractAddr));
+
+				char buffer[256];
+				cin.getline(buffer, 256);
+				string data(buffer);
+				
+				u256s txdata;
+        txdata.push_back(3);
+        txdata.push_back(7);
+				cout << "sent: " << amount << " to " << contractAddr << " : " << data << endl;
+				
+				c.transact(us.secret(), dest, amount, txdata);
 			}
 			else if (cmd == "block:list")
 			{
