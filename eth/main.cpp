@@ -248,9 +248,10 @@ int main(int argc, char** argv)
 			else if (cmd == "balance")
 			{
 				u256 balance = c.state().balance(us.address());
+        string value  = formatBalance(balance).c_str();
 				cout << endl;
 				cout << "Current balance: ";
-				cout << balance << endl;
+				cout << value << endl;
 				cout << "===" << endl;
 			}	
 			else if (cmd == "transact")
