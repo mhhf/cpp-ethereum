@@ -20,6 +20,8 @@
  * Ethereum client.
  */
 
+#include <boost/asio.hpp>
+
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
@@ -83,12 +85,299 @@ void version()
 	exit(0);
 }
 
+void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
+{
+	//cout << "> " << flush;
+	std::string cmd;
+	s_in >> cmd;
+	if (cmd == "netstart")
+	{
+		eth::uint port;
+		s_in >> port;
+		c.startNetwork((short)port);
+	}
+	else if (cmd == "connect")
+	{
+		string addr;
+		eth::uint port;
+		s_in >> addr >> port;
+		c.connect(addr, (short)port);
+	}
+	else if (cmd == "netstop")
+	{
+		c.stopNetwork();
+	}
+	else if (cmd == "minestart")
+	{
+		c.startMining();
+	}
+	else if (cmd == "minestop")
+	{
+		c.stopMining();
+	}
+	else if (cmd == "address")
+	{
+		s_out << endl;
+		s_out << "Current address: " + asHex(us.address().asArray()) << endl;
+		s_out << "===" << endl;
+	}
+	else if (cmd == "secret")
+	{
+		s_out << endl;
+		s_out << "Current secret: " + asHex(us.secret().asArray()) << endl;
+		s_out << "===" << endl;
+	}
+	else if (cmd == "balance")
+	{
+		u256 balance = c.state().balance(us.address());
+		string value = formatBalance(balance);
+		s_out << endl;
+		s_out << "Current balance: ";
+		s_out << value << endl;
+		s_out << "===" << endl;
+	}
+	else if (cmd == "pending")
+	{
+		for (Transaction const& t : c.pending())
+		{
+			if (t.receiveAddress)
+			{
+				bool isContract = c.state().isContractAddress(t.receiveAddress);
+				s_out << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
+					<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+			}
+			else
+			{
+				s_out << t.safeSender().abridged() << "+> "
+					<< right160(t.sha3()) << ": "
+					<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+			}
+		}
+	}
+	else if (cmd == "balanceof")
+	{
+		string owner;
+		s_in >> owner;
+		u256 balance = c.state().balance(h160(fromUserHex(owner)));
+		s_out << endl;
+		s_out << "Current balance: ";
+		s_out << formatBalance(balance) << endl;
+		s_out << "===" << endl;
+	}
+	else if (cmd == "memory")
+	{
+		string address;
+		s_in >> address;
+		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+
+		unsigned numerics = 0;
+		bool unexpectedNumeric = false;
+		u256 next = 0;
+
+		for (auto i : mem)
+		{
+			if (next < i.first)
+			{
+				unsigned j;
+				for (j = 0; j <= numerics && next + j < i.first; ++j) {
+					s_out << (j < numerics || unexpectedNumeric ? " 0" : " STOP");
+				}
+				unexpectedNumeric = false;
+				numerics -= min(numerics, j);
+				if (next + j < i.first) {
+					s_out << " ...\n@" << showbase << hex << i.first << "    ";
+				}
+			}
+			else if (!next)
+			{
+				s_out << "@" << showbase << hex << i.first << "    ";
+			}
+			auto iit = c_instructionInfo.find((Instruction)(unsigned)i.second);
+			if (numerics || iit == c_instructionInfo.end() || (u256)(unsigned)iit->first != i.second)	// not an instruction or expecting an argument...
+			{
+				if (numerics)
+					numerics--;
+				else
+					unexpectedNumeric = true;
+				s_out << " " << showbase << hex << i.second;
+			}
+			else
+			{
+				auto const& ii = iit->second;
+				s_out << " *" << ii.name << "*";
+				numerics = ii.additional;
+			}
+			next = i.first + 1;
+		}
+		s_out << endl;
+	}
+	else if (cmd == "transact")
+	{
+		string sechex;
+		string rechex;
+		u256 amount;
+		s_in >> sechex >> rechex >> amount;
+		Secret secret = h256(fromUserHex(sechex));
+		Address dest = h160(fromUserHex(rechex));
+		c.transact(secret, dest, amount);
+	}
+	else if (cmd == "send")
+	{
+		string rechex;
+		u256 amount;
+		s_in >> rechex >> amount;
+		Address dest = h160(fromUserHex(rechex));
+		c.transact(us.secret(), dest, amount);
+	}
+	else if (cmd == "peers")
+	{
+		for (size_t i = 0; i < c.peers().size(); i++) {
+			s_out << c.peers()[i].host << ":" << c.peers()[i].port << endl;
+		}
+	}
+	else if (cmd == "fee")
+	{
+		s_out << formatBalance(c.state().fee()) << endl;
+	}
+	else if (cmd == "difficulty")
+	{
+		auto const& bc = c.blockChain();
+		auto diff = BlockInfo(bc.block()).difficulty;
+		s_out << toLog2(diff) << endl;
+	}
+	else if (cmd == "exit")
+	{
+		exit(0);
+	}
+	else if (cmd == "contract:list")
+	{
+		auto const& bc = c.blockChain();
+		for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+		{
+			auto d = bc.details(h);
+			// print the block info
+			auto blockData = bc.block(h);
+			auto block = RLP(blockData);
+			BlockInfo info(blockData);
+
+			// block transactions
+			for (auto const& i : block[1])
+			{
+				Transaction t(i.data());
+				
+				if (!t.receiveAddress)
+				{
+					s_out << "  " << t.safeSender() << "  "
+						<< right160(t.sha3()) << "  "
+						<< formatBalance(t.value) << "  " << (unsigned)t.nonce << endl;
+				}
+			}
+		}
+	}
+	else if (cmd == "contract:create")
+	{
+		u256 amount;
+		s_in >> amount;
+
+		char buffer[256];
+		s_in.getline(buffer, 256);
+		string data(buffer);
+
+		u256s contract = eth::assemble(data, false);
+		cout << "sent: " << amount << " : " << data << endl;
+
+		c.transact(us.secret(), Address(), amount, contract);
+	}
+	else if (cmd == "contract:send")
+	{
+		u256 amount;
+		string contractAddr;
+		s_in >> amount >> contractAddr;
+		Address dest = h160(fromUserHex(contractAddr));
+
+		char buffer[256];
+		s_in.getline(buffer, 256);
+		string data(buffer);
+
+		u256s txdata;
+		txdata.push_back(3);
+		txdata.push_back(7);
+		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
+
+		c.transact(us.secret(), dest, amount, txdata);
+	}
+	else if (cmd == "block:list")
+	{
+		auto const& bc = c.blockChain();
+		for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+		{
+			auto d = bc.details(h);
+			auto blockData = bc.block(h);
+			auto block = RLP(blockData);
+			s_out << d.number << ":\t" << h;
+			if (block[1].itemCount() > 0) {
+				s_out << " (" << block[1].itemCount() << ")";
+			}
+			s_out << endl;
+		}
+	}
+	else if (cmd == "block:info")
+	{
+		int blocknr;
+		s_in >> blocknr;
+
+		auto const& bc = c.blockChain();
+		for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+		{
+			auto d = bc.details(h);
+			if (d.number == blocknr) {
+				s_out << d.number << ":\t" << h << endl;
+
+				// print the block info
+				auto blockData = bc.block(h);
+				auto block = RLP(blockData);
+				BlockInfo info(blockData);
+
+				s_out << "Timestamp: " << info.timestamp << endl;
+				s_out << "Transactions: " << block[1].itemCount() << endl;
+
+				// block transactions
+				for (auto const& i : block[1])
+				{
+					Transaction t(i.data());
+
+
+					if (t.receiveAddress)
+					{
+						bool isContract = c.state().isContractAddress(t.receiveAddress);
+						s_out << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
+							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+					}
+					else
+					{
+						s_out << t.safeSender().abridged() << "+> "
+							<< right160(t.sha3()) << ": "
+							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
+					}
+				}
+
+				break;
+			}
+		}
+	}
+	else
+	{
+		s_out << "unknown command: " << cmd << endl;
+	}
+}
+
 int main(int argc, char** argv)
 {
 	unsigned short listenPort = 30303;
 	string remoteHost;
 	unsigned short remotePort = 30303;
 	bool interactive = false;
+	bool network_interactive = false;
 	string dbPath;
 	eth::uint mining = ~(eth::uint)0;
 	NodeMode mode = NodeMode::Full;
@@ -189,12 +478,16 @@ int main(int argc, char** argv)
 			help();
 		else if (arg == "-V" || arg == "--version")
 			version();
+		else if (arg == "--network_interactive")
+			network_interactive = true;
 		else
 			remoteHost = argv[i];
 	}
 
-	if (!clientName.empty())
+	if (!clientName.empty()) {
 		clientName += "/";
+	}
+
 	Client c("Ethereum(++)/" + clientName + "v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM), coinbase, dbPath);
 
 	if (interactive)
@@ -203,264 +496,31 @@ int main(int argc, char** argv)
 		cout << "  Code by Gav Wood, (c) 2013, 2014." << endl;
 		cout << "  Based on a design by Vitalik Buterin." << endl << endl;
 
-		while (true)
+		if (network_interactive)
 		{
-			cout << "> " << flush;
-			std::string cmd;
-			cin >> cmd;
-			if (cmd == "netstart")
+			boost::asio::io_service ios;
+			boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), 30000);
+			boost::asio::ip::tcp::acceptor acceptor(ios, endpoint);
+
+			while (true)
 			{
-				eth::uint port;
-				cin >> port;
-				c.startNetwork((short)port);
-			}
-			else if (cmd == "connect")
-			{
-				string addr;
-				eth::uint port;
-				cin >> addr >> port;
-				c.connect(addr, (short)port);
-			}
-			else if (cmd == "netstop")
-			{
-				c.stopNetwork();
-			}
-			else if (cmd == "minestart")
-			{
-				c.startMining();
-			}
-			else if (cmd == "minestop")
-			{
-				c.stopMining();
-			}
-			else if (cmd == "address")
-			{
-				cout << endl;
-				cout << "Current address: " + asHex(us.address().asArray()) << endl;
-				cout << "===" << endl;
-			}
-			else if (cmd == "secret")
-			{
-				cout << endl;
-				cout << "Current secret: " + asHex(us.secret().asArray()) << endl;
-				cout << "===" << endl;
-			}
-			else if (cmd == "balance")
-			{
-				u256 balance = c.state().balance(us.address());
-				string value  = formatBalance(balance);
-				cout << endl;
-				cout << "Current balance: ";
-				cout << value << endl;
-				cout << "===" << endl;
-			}
-			else if (cmd == "pending")
-			{
-				for (Transaction const& t : c.pending())
+				cout << "waiting for connection" << endl;
+				boost::asio::ip::tcp::iostream stream;
+				acceptor.accept(*stream.rdbuf());
+				cout << "waiting for command" << endl;
+
+				while (stream.good())
 				{
-					if (t.receiveAddress)
-					{
-						bool isContract = c.state().isContractAddress(t.receiveAddress);
-						cout << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
-							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
-					}
-					else
-					{
-						cout << t.safeSender().abridged() << "+> "
-							<< right160(t.sha3()) << ": "
-							<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
-					}
+					runCommand(c, us, stream, stream);
 				}
 			}
-			else if (cmd == "balanceof")
+		}
+		else // command line
+		{
+			while (true)
 			{
-				string owner;
-				cin >> owner;
-				u256 balance = c.state().balance(h160(fromUserHex(owner)));
-				cout << endl;
-				cout << "Current balance: ";
-				cout << formatBalance(balance) << endl;
-				cout << "===" << endl;
-			}
-			else if (cmd == "memory")
-			{
-				string address;
-				cin >> address;
-				auto mem = c.state().contractMemory(h160(fromUserHex(address)));
-				
-				unsigned numerics = 0;
-				bool unexpectedNumeric = false;
-				u256 next = 0;
-				
-				for (auto i : mem)
-				{
-					if (next < i.first)
-					{
-						unsigned j;
-						for (j = 0; j <= numerics && next + j < i.first; ++j) {
-							cout << (j < numerics || unexpectedNumeric ? " 0" : " STOP");
-						}
-						unexpectedNumeric = false;
-						numerics -= min(numerics, j);
-						if (next + j < i.first) {
-							cout << " ...\n@" << showbase << hex << i.first << "    ";
-						}
-					}
-					else if (!next)
-					{
-						cout << "@" << showbase << hex << i.first << "    ";
-					}
-					auto iit = c_instructionInfo.find((Instruction)(unsigned)i.second);
-					if (numerics || iit == c_instructionInfo.end() || (u256)(unsigned)iit->first != i.second)	// not an instruction or expecting an argument...
-					{
-						if (numerics)
-							numerics--;
-						else
-							unexpectedNumeric = true;
-						cout << " " << showbase << hex << i.second;
-					}
-					else
-					{
-						auto const& ii = iit->second;
-						cout << " *" << ii.name << "*";
-						numerics = ii.additional;
-					}
-					next = i.first + 1;
-				}
-				cout << endl;
-			}
-			else if (cmd == "transact")
-			{
-				string sechex;
-				string rechex;
-				u256 amount;
-				cin >> sechex >> rechex >> amount;
-				Secret secret = h256(fromUserHex(sechex));
-				Address dest = h160(fromUserHex(rechex));
-				c.transact(secret, dest, amount);
-			}
-			else if (cmd == "send")
-			{
-				string rechex;
-				u256 amount;
-				cin >> rechex >> amount;
-				Address dest = h160(fromUserHex(rechex));
-				c.transact(us.secret(), dest, amount);
-			}
-			else if (cmd == "peers")
-			{
-				for (size_t i = 0; i < c.peers().size(); i++) {
-					cout << c.peers()[i].host << ":" << c.peers()[i].port << endl;
-				}
-			}
-			else if (cmd == "fee")
-			{
-				cout << formatBalance(c.state().fee()) << endl;
-			}
-			else if (cmd == "difficulty")
-			{
-				auto const& bc = c.blockChain();
-        auto diff = BlockInfo(bc.block()).difficulty;
-				cout << toLog2(diff) << endl;
-			}
-			else if (cmd == "exit")
-			{
-				break;
-			}
-			else if (cmd == "contract:create")
-			{
-				u256 amount;
-				cin >> amount;
-
-				char buffer[256];
-				cin.getline(buffer, 256);
-				string data(buffer);
-				
-				u256s contract = eth::assemble(data, false);
-				cout << "sent: " << amount << " : " << data << endl;
-				
-				c.transact(us.secret(), Address(), amount, contract);
-			}
-			else if (cmd == "contract:send")
-			{
-				u256 amount;
-				string contractAddr;
-				cin >> amount >> contractAddr;
-				Address dest = h160(fromUserHex(contractAddr));
-
-				char buffer[256];
-				cin.getline(buffer, 256);
-				string data(buffer);
-				
-				u256s txdata;
-				txdata.push_back(3);
-				txdata.push_back(7);
-				cout << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
-				
-				c.transact(us.secret(), dest, amount, txdata);
-			}
-			else if (cmd == "block:list")
-			{
-				auto const& bc = c.blockChain();
-				for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
-				{
-					auto d = bc.details(h);
-					auto blockData = bc.block(h);
-					auto block = RLP(blockData);
-					cout << d.number << ":\t" << h;
-					if (block[1].itemCount() > 0) {
-						cout << " (" << block[1].itemCount() << ")";
-					}
-					cout << endl;
-				}
-			}
-			else if (cmd == "block:info")
-			{
-				int blocknr;
-				cin >> blocknr;
-				
-				auto const& bc = c.blockChain();
-				for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
-				{
-					auto d = bc.details(h);
-					if (d.number == blocknr) {
-						cout << d.number << ":\t" << h << endl;
-						
-						// print the block info
-						auto blockData = bc.block(h);
-						auto block = RLP(blockData);
-						BlockInfo info(blockData);
-
-						cout << "Timestamp: " << info.timestamp << endl;
-						cout << "Transactions: " << block[1].itemCount() << endl;
-
-						// block transactions
-						for (auto const& i : block[1])
-						{
-							Transaction t(i.data());
-							
-
-							if (t.receiveAddress)
-							{
-								bool isContract = c.state().isContractAddress(t.receiveAddress);
-								cout << t.safeSender().abridged() << (isContract ? '*' : '-') << "> "
-									<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
-							}
-							else
-							{
-								cout << t.safeSender().abridged() << "+> "
-									<< right160(t.sha3()) << ": "
-									<< formatBalance(t.value) << " [" << (unsigned)t.nonce << "]" << endl;
-							}
-						}
-
-						break;
-					}
-				}
-			}
-			else
-			{
-				cout << "unknown command: " << cmd << endl;
+				cout << "> ";
+				runCommand(c, us, cin, cout);
 			}
 		}
 	}
