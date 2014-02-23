@@ -369,8 +369,8 @@ int main(int argc, char** argv)
 			}
 			else if (cmd == "contract:create")
 			{
-				u256 amount;
-				cin >> amount;
+				u256 amount = 1000000000000000000;
+				// cin >> amount;
 
 				char buffer[256];
 				cin.getline(buffer, 256);
@@ -383,9 +383,9 @@ int main(int argc, char** argv)
 			}
 			else if (cmd == "contract:send")
 			{
-				u256 amount;
+				u256 amount=100000000000000000;
 				string contractAddr;
-				cin >> amount >> contractAddr;
+				cin >> contractAddr;
 				Address dest = h160(fromUserHex(contractAddr));
 
 				char buffer[256];
