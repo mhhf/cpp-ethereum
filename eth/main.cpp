@@ -203,13 +203,34 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 			}
 			else
 			{
-				auto const& ii = iit->second;
+				InstructionInfo const& ii = iit->second;
 				s_out << " *" << ii.name << "*";
 				numerics = ii.additional;
 			}
 			next = i.first + 1;
 		}
 		s_out << endl;
+	}
+	else if (cmd == "memory:raw")
+	{
+		string address;
+		s_in >> address;
+		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+		for (auto i : mem)
+		{
+			/*
+			eth::u256 v = i.second;
+			if (v <= Instruction::SUICIDE) 
+			{
+				string s = (*c_instructionInfo.find((Instruction)(unsigned)i.second)).second.name;
+				s_out << i.first << "\t" << s << endl;
+			}
+			else
+			{
+				s_out << i.first << "\t" << i.second << endl;
+			}*/
+			s_out << i.first << "\t" << i.second << endl;
+		}
 	}
 	else if (cmd == "transact")
 	{
@@ -274,6 +295,11 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 			}
 		}
 	}
+	else if (cmd == "address:new")
+	{
+		us = KeyPair::create();
+		s_out << asHex(us.address().asArray()) << endl;
+	}
 	else if (cmd == "contract:create")
 	{
 		u256 amount;
@@ -295,13 +321,16 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_in >> amount >> contractAddr;
 		Address dest = h160(fromUserHex(contractAddr));
 
-		char buffer[256];
-		s_in.getline(buffer, 256);
-		string data(buffer);
+		//char buffer[256];
+		//s_in.getline(buffer, 256);
+		//string data(buffer);
 
+		int a;
+		int b;
+		s_in >> a >> b;
 		u256s txdata;
-		txdata.push_back(3);
-		txdata.push_back(7);
+		txdata.push_back(a);
+		txdata.push_back(b);
 		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
 
 		c.transact(us.secret(), dest, amount, txdata);
