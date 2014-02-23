@@ -276,8 +276,8 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	}
 	else if (cmd == "contract:create")
 	{
-		u256 amount;
-		s_in >> amount;
+		u256 amount = 1000000000000000000;
+		// s_in >> amount;
 
 		char buffer[256];
 		s_in.getline(buffer, 256);
@@ -290,9 +290,9 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	}
 	else if (cmd == "contract:send")
 	{
-		u256 amount;
+		u256 amount = 10000000000000000;
 		string contractAddr;
-		s_in >> amount >> contractAddr;
+		s_in >> contractAddr;
 		Address dest = h160(fromUserHex(contractAddr));
 
 		char buffer[256];
