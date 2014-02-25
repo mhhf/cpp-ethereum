@@ -1,0 +1,169 @@
+<html>
+
+<head><title>untitled</title>
+
+<script src="jquery-2.1.0.min.js"></script>
+<script src="eth.js"></script>
+
+
+<style>
+
+
+</style>
+
+<script type="text/javascript">
+<!--
+
+function init() { setInterval("get_value()", 4000); }
+
+function get_value() {
+	var cmd = document.getElementById('cmd').value;
+	if(cmd == null || cmd == "") {
+		return;
+	}
+	eth_command(cmd);
+}
+
+function eth_command(str, callback)
+{
+  var cmd = "/cgi-bin/eth.pl";
+  if(str != null && str != "") {
+		cmd += "?cmd=" + str;
+  }
+  
+  var history = document.getElementById('history');
+  history.innerHTML += str + "\n";
+  
+  var myRequest = new XMLHttpRequest();
+  myRequest.open("GET", cmd);
+  myRequest.onreadystatechange = function() {
+		if (myRequest.readyState === 4) {  // document is ready to parse.
+			if (myRequest.status === 200) {  // file is found
+				callback(myRequest.responseText);
+			}
+		}
+	}
+  myRequest.send();
+}
+
+function getBlockInfo(h) {
+	eth_command("block:info " + h,
+		function(str) {
+			var block = document.getElementById(h);
+			
+			var restult = "<div style=\"backgroundColor:#AAFFFF; padding-left:5ex;\">";
+			var response = str.split("\n");
+			for(var i = 2; i < response.length; i++) {
+				restult += response[i];
+			}
+			restult += "</div>";
+			
+			block.innerHTML += restult;
+		}
+	);
+}
+
+function getBlockList() {
+	eth_command("block:list",
+		function(str) {
+			var disp = document.getElementById('display');
+			var bockList = str.split("\n");
+			
+			disp.innerHTML = "";
+			for (i = 0; i < bockList.length; i++) {
+				var b = bockList[i];
+				if(b == "") continue;
+				
+				var s = b.split("\t");
+				var id = s[0].split(':')[0];
+				var h = s[1].split(" ");
+				
+				disp.innerHTML += "<div id='" + id + "'><a href=\"#\" onclick='getBlockInfo(\"" + id + "\");'>" + h[0] + "</a></div>";
+			}
+			disp.scrollTop = disp.scrollHeight;
+		}
+	);
+}
+
+function getContractInfo(h) {
+	eth_command("memory:raw " + h,
+		function(str) {
+			var block = document.getElementById("memory");
+			block.innerHTML = str;
+			block.name = h;
+		}
+	);
+}
+
+function getContracts() {
+	eth_command("contract:list",
+		function(str) {
+			var disp = document.getElementById('display');
+			var list = str.split("\n");
+			disp.innerHTML = "";
+			for (i = 0; i < list.length; i++) {
+				var b = list[i].split(' ');
+				var id = b[4];
+				if(id != null && id != "") {
+					disp.innerHTML += "<div id='" + id + "'><a href=\"#\" onclick='getContractInfo(\"" + id + "\");'>" + id + "</a></div>";
+				}
+			}
+			disp.scrollTop = disp.scrollHeight;
+		}
+	);
+}
+
+function makeContract() {
+	var code = "PUSH 1000 PUSH 0 TXDATA ADD PUSH 0 MSTORE PUSH 1 TXDATA PUSH 0 MLOAD SSTORE";
+	eth_command("contract:create 100000000000000000 " + code,
+		function(str) {
+			var disp = document.getElementById('display');
+			disp.innerHTML = str;
+			disp.scrollTop = disp.scrollHeight;
+		}
+	);
+}
+
+function sendToContract() {
+	var m = document.getElementById('memory');
+	if(m.name != null && m.name != ""){
+		eth_command("contract:send 100000000000000000 " + m.name + " 13 42",
+			function(str) {
+				var disp = document.getElementById('display');
+				disp.innerHTML = str;
+				disp.scrollTop = disp.scrollHeight;
+			}
+		);
+	}
+}
+
+function newAddress() {
+	eth_command("address:new",
+		function(str) {
+			var disp = document.getElementById('display');
+			disp.innerHTML = str;
+			disp.scrollTop = disp.scrollHeight;
+		}
+	);
+}
+//-->
+</script>
+
+</head>
+
+
+<body>
+<div id="display" style="font-family:monospace; white-space: pre; width:800px; height:500px; overflow-y:scroll; margin-left:auto; margin-right:auto; border:1px solid #000000;"></div>
+<div id="memory" name="" style="font-family:monospace; white-space: pre; width:800px; height:300px; overflow-y:scroll; margin-left:auto; margin-right:auto; border:1px solid #000000;"></div>
+<div id="history" style="font-family:monospace; white-space: pre; width:800px; height:100px; overflow-y:scroll; margin-left:auto; margin-right:auto; border:1px solid #000000;"></div>
+
+<div style="width:800px; height:500px; margin-left:auto; margin-right:auto;">
+	<input type="button" name="cmd" value="Blocklist" onclick="getBlockList();">
+	<input type="button" name="cmd" value="Contracts" onclick="getContracts();">
+	<input type="button" name="cmd" value="New Contract" onclick="makeContract();">
+	<input type="button" name="cmd" value="Send" onclick="sendToContract();">
+	<input type="button" name="cmd" value="New Address" onclick="newAddress();">
+</div>
+
+</body>
+</html>

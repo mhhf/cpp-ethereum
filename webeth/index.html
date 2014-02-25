@@ -1,0 +1,60 @@
+<html>
+
+<head><title>untitled</title>
+
+<script src="jquery-2.1.0.min.js"></script>
+<script src="eth.js"></script>
+
+<script type="text/javascript">
+<!--
+
+function init() { setInterval("get_value()", 4000); }
+
+function get_value() {
+	var cmd = document.getElementById('cmd').value;
+	if(cmd == null || cmd == "") {
+		return;
+	}
+	eth_command(cmd);
+}
+
+function eth_command(str)
+{
+  var cmd = "/cgi-bin/eth.pl";
+  if(str != null && str != "") {
+		cmd += "?cmd=" + str;
+  }
+  
+  var myRequest = new XMLHttpRequest();
+  myRequest.open("GET", cmd);
+  myRequest.onreadystatechange = function() {
+		if (myRequest.readyState === 4) {  // document is ready to parse.
+			if (myRequest.status === 200) {  // file is found
+				var disp = document.getElementById('display');
+				disp.innerHTML += myRequest.responseText;
+				disp.scrollTop = disp.scrollHeight;
+				document.getElementById('cmd').value = "";
+			}
+		}
+	}
+  myRequest.send();
+}
+//window.onload = init;
+//-->
+</script>
+
+</head>
+
+
+<body>
+<div id="display" style="font-family:monospace; white-space: pre; width:800px; height:500px; overflow-y:scroll; margin-left:auto; margin-right:auto; border:1px solid #000000;"></div>
+
+<div style="width:800px; height:500px; margin-left:auto; margin-right:auto;">
+	<form name="example" action="#" onsubmit="get_value(); return false;">
+		<input style="width:100%;" type="text" name="cmd" id="cmd">
+		<input type="submit" name="cmd" value="submit">
+	</form>
+</div>
+
+</body>
+</html>

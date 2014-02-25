@@ -22,6 +22,8 @@
 
 #include <boost/asio.hpp>
 
+#include "../json_spirit/json_spirit_writer_template.h"
+
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
@@ -85,6 +87,111 @@ void version()
 	exit(0);
 }
 
+
+json_spirit::mObject getJSONContract(const Client& c, const Address& address)
+{
+	json_spirit::mObject contract;
+
+	contract["address"] = toString(address);
+
+	u256 contract_balance = c.state().balance(address);
+	contract["balance"] = toString(contract_balance);
+
+	json_spirit::mObject contract_memory;
+
+	auto mem = c.state().contractMemory(address);
+	for (auto i : mem)
+	{
+		contract_memory[toString(i.first)] = toString(i.second);
+	}
+
+	contract["memory"] = contract_memory;
+	return contract;
+}
+
+
+json_spirit::mObject getJSONTransaction(const Transaction& t)
+{
+	json_spirit::mObject o;
+	if (t.receiveAddress) {
+		o["receiveAddress"] = toString(t.receiveAddress);
+	} else {
+		o["sha3"] = toString(right160(t.sha3()));
+	}
+	o["safeSender"] = toString(t.safeSender());
+	o["value"] = toString(t.value);
+	o["nonce"] = toString(t.nonce);
+
+	//bool isContract = c.state().isContractAddress(t.receiveAddress);
+	//o["contract"] = isContract ? "true" : "false";
+	return o;
+}
+
+void getJSONBlockInfo()
+{
+
+}
+
+
+void getJSONState(Client& c, std::ostream& s_out)
+{
+	json_spirit::mObject result;
+
+
+	// block:list
+	json_spirit::mArray blocks;
+	json_spirit::mArray contractArray;
+	int block_count = 0;
+	auto const& bc = c.blockChain();
+	for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+	{
+		auto d = bc.details(h);
+		auto blockData = bc.block(h);
+		auto block = RLP(blockData);
+		BlockInfo info(blockData);
+
+		// it's a boring block, procede ...
+		if (block[1].itemCount() == 0 && (block_count++) > 7) {
+			continue;
+		}
+
+		json_spirit::mObject b;
+		b["hash"] = toString(h);
+		b["number"] = toString(d.number);
+		b["timestamp"] = toString(info.timestamp);
+		
+		json_spirit::mArray txArray;
+		// block transactions
+		for (auto const& i : block[1])
+		{
+			Transaction tx(i.data());
+			txArray.push_back(getJSONTransaction(tx));
+
+			if (!tx.receiveAddress) {
+
+				Address address = right160(tx.sha3());
+				contractArray.push_back(json_spirit::mValue(getJSONContract(c, address)));
+			}
+		}
+		b["transactions"] = txArray;
+		blocks.push_back(b);
+	}
+
+	result["blocks"] = blocks;
+	result["contracts"] = contractArray;
+	
+	json_spirit::mArray txArrayPending;
+	for (Transaction const& t : c.pending())
+	{
+		txArrayPending.push_back(getJSONTransaction(t));
+	}
+	result["pending"] = txArrayPending;
+
+
+	json_spirit::write_stream(json_spirit::mValue(result), s_out, true);
+}
+
+
 void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 {
 	//cout << "> " << flush;
@@ -107,11 +214,11 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	{
 		c.stopNetwork();
 	}
-	else if (cmd == "minestart")
+	else if (cmd == "mine:start")
 	{
 		c.startMining();
 	}
-	else if (cmd == "minestop")
+	else if (cmd == "mine:stop")
 	{
 		c.stopMining();
 	}
@@ -119,13 +226,11 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	{
 		s_out << endl;
 		s_out << "Current address: " + asHex(us.address().asArray()) << endl;
-		s_out << "===" << endl;
 	}
 	else if (cmd == "secret")
 	{
 		s_out << endl;
 		s_out << "Current secret: " + asHex(us.secret().asArray()) << endl;
-		s_out << "===" << endl;
 	}
 	else if (cmd == "balance")
 	{
@@ -134,7 +239,6 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_out << endl;
 		s_out << "Current balance: ";
 		s_out << value << endl;
-		s_out << "===" << endl;
 	}
 	else if (cmd == "pending")
 	{
@@ -162,7 +266,6 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_out << endl;
 		s_out << "Current balance: ";
 		s_out << formatBalance(balance) << endl;
-		s_out << "===" << endl;
 	}
 	else if (cmd == "memory")
 	{
@@ -185,31 +288,44 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 				unexpectedNumeric = false;
 				numerics -= min(numerics, j);
 				if (next + j < i.first) {
-					s_out << " ...\n@" << showbase << hex << i.first << "    ";
+					s_out << " ...\n@" << showbase << hex << i.first << showbase << dec << "\t";
 				}
 			}
 			else if (!next)
 			{
-				s_out << "@" << showbase << hex << i.first << "    ";
+				s_out << "@" << showbase << hex << i.first << showbase << dec << "\t";
 			}
+			
 			auto iit = c_instructionInfo.find((Instruction)(unsigned)i.second);
 			if (numerics || iit == c_instructionInfo.end() || (u256)(unsigned)iit->first != i.second)	// not an instruction or expecting an argument...
 			{
-				if (numerics)
+				if (numerics) {
 					numerics--;
-				else
+				} else {
 					unexpectedNumeric = true;
-				s_out << " " << showbase << hex << i.second;
+				}
+				s_out << " " << i.second;
 			}
-			else
+			else // print commands
 			{
-				auto const& ii = iit->second;
-				s_out << " *" << ii.name << "*";
-				numerics = ii.additional;
+				InstructionInfo const& ii = iit->second;
+				s_out << " " << ii.name;
+				numerics = ii.additional; // command has some parameters
 			}
 			next = i.first + 1;
 		}
 		s_out << endl;
+	}
+	else if (cmd == "memory:raw")
+	{
+		string address;
+		s_in >> address;
+
+		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+		for (auto i : mem)
+		{
+			s_out << i.first << "\t" << i.second << endl;
+		}
 	}
 	else if (cmd == "transact")
 	{
@@ -245,10 +361,6 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		auto diff = BlockInfo(bc.block()).difficulty;
 		s_out << toLog2(diff) << endl;
 	}
-	else if (cmd == "exit")
-	{
-		exit(0);
-	}
 	else if (cmd == "contract:list")
 	{
 		auto const& bc = c.blockChain();
@@ -274,6 +386,11 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 			}
 		}
 	}
+	else if (cmd == "address:new")
+	{
+		us = KeyPair::create();
+		s_out << asHex(us.address().asArray()) << endl;
+	}
 	else if (cmd == "contract:create")
 	{
 		u256 amount = 1000000000000000000;
@@ -295,13 +412,16 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_in >> contractAddr;
 		Address dest = h160(fromUserHex(contractAddr));
 
-		char buffer[256];
-		s_in.getline(buffer, 256);
-		string data(buffer);
+		//char buffer[256];
+		//s_in.getline(buffer, 256);
+		//string data(buffer);
 
+		int a;
+		int b;
+		s_in >> a >> b;
 		u256s txdata;
-		txdata.push_back(3);
-		txdata.push_back(7);
+		txdata.push_back(a);
+		txdata.push_back(b);
 		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
 
 		c.transact(us.secret(), dest, amount, txdata);
@@ -345,8 +465,6 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 				for (auto const& i : block[1])
 				{
 					Transaction t(i.data());
-
-
 					if (t.receiveAddress)
 					{
 						bool isContract = c.state().isContractAddress(t.receiveAddress);
@@ -364,6 +482,14 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 				break;
 			}
 		}
+	}
+	else if (cmd == "json:getstate")
+	{
+		getJSONState(c, s_out);
+	}
+	else if (cmd == "exit")
+	{
+		exit(0);
 	}
 	else
 	{
@@ -490,38 +616,35 @@ int main(int argc, char** argv)
 
 	Client c("Ethereum(++)/" + clientName + "v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM), coinbase, dbPath);
 
-	if (interactive)
+	if (network_interactive)
+	{
+		boost::asio::io_service ios;
+		boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), 30000);
+		boost::asio::ip::tcp::acceptor acceptor(ios, endpoint);
+
+		while (true)
+		{
+			cout << "waiting for connection" << endl;
+			boost::asio::ip::tcp::iostream stream;
+			acceptor.accept(*stream.rdbuf());
+			cout << "waiting for command" << endl;
+
+			while (stream.good())
+			{
+				runCommand(c, us, stream, stream);
+			}
+		}
+	}
+	else if (interactive) // command line
 	{
 		cout << "Ethereum (++)" << endl;
 		cout << "  Code by Gav Wood, (c) 2013, 2014." << endl;
 		cout << "  Based on a design by Vitalik Buterin." << endl << endl;
 
-		if (network_interactive)
+		while (true)
 		{
-			boost::asio::io_service ios;
-			boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), 30000);
-			boost::asio::ip::tcp::acceptor acceptor(ios, endpoint);
-
-			while (true)
-			{
-				cout << "waiting for connection" << endl;
-				boost::asio::ip::tcp::iostream stream;
-				acceptor.accept(*stream.rdbuf());
-				cout << "waiting for command" << endl;
-
-				while (stream.good())
-				{
-					runCommand(c, us, stream, stream);
-				}
-			}
-		}
-		else // command line
-		{
-			while (true)
-			{
-				cout << "> ";
-				runCommand(c, us, cin, cout);
-			}
+			cout << "> ";
+			runCommand(c, us, cin, cout);
 		}
 	}
 	else
