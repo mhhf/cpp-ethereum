@@ -31,6 +31,7 @@
 #include <thread>
 #include <chrono>
 #include <fstream>
+#include <algorithm>
 #include "Defaults.h"
 #include "Client.h"
 #include "PeerNetwork.h"
@@ -267,6 +268,9 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_out << "Current balance: ";
 		s_out << formatBalance(balance) << endl;
 	}
+  else if (cmd == "contract:valueof" ) 
+  { // Returns the value of a key from a contract
+  }
 	else if (cmd == "memory")
 	{
 		string address;
@@ -416,12 +420,23 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		//s_in.getline(buffer, 256);
 		//string data(buffer);
 
-		int a;
-		int b;
+		string a;
+		string b;
 		s_in >> a >> b;
+    
+    bytes a_buffer(32); 
+    bytes b_buffer(32); 
+    
+    std::copy(a.begin(), a.end(), a_buffer.begin());
+    std::copy(b.begin(), b.end(), b_buffer.begin());
+    
+		u256 ua = h256(a_buffer);
+		u256 ub = h256(b_buffer);
+    
+    
 		u256s txdata;
-		txdata.push_back(a);
-		txdata.push_back(b);
+		txdata.push_back(ua);
+		txdata.push_back(ub);
 		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
 
 		c.transact(us.secret(), dest, amount, txdata);
