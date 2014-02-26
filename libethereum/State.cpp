@@ -624,12 +624,21 @@ void State::unapplyRewards(Addresses const& _uncleAddresses)
 
 void State::executeBare(Transaction const& _t, Address _sender)
 {
+#if ETH_DEBUG
+	commit();
+	clog(StateChat) << "State:" << rootHash();
+	clog(StateChat) << "Executing TX:" << _t;
+#endif
+
 	// Entry point for a contract-originated transaction.
 
 	// Ignore invalid transactions.
 	auto nonceReq = transactionsFrom(_sender);
 	if (_t.nonce != nonceReq)
+	{
+		clog(StateChat) << "Invalid Nonce.";
 		throw InvalidNonce(nonceReq, _t.nonce);
+	}
 
 	unsigned nonZeroData = 0;
 	for (auto i: _t.data)
@@ -639,18 +648,23 @@ void State::executeBare(Transaction const& _t, Address _sender)
 
 	// Not considered invalid - just pointless.
 	if (balance(_sender) < _t.value + fee)
+	{
+		clog(StateChat) << "Not enough cash.";
 		throw NotEnoughCash();
-
-	// Increment associated nonce for sender.
-	noteSending(_sender);
+	}
 
 	if (_t.receiveAddress)
 	{
+		// Increment associated nonce for sender.
+		noteSending(_sender);
+
+		// Pay...
 		subBalance(_sender, _t.value + fee);
 		addBalance(_t.receiveAddress, _t.value);
 
 		if (isContractAddress(_t.receiveAddress))
 		{
+			// Once we get here, there's no going back.
 			try
 			{
 				MinerFeeAdder feeAdder({this, 0});	// will add fee on destruction.
@@ -658,27 +672,36 @@ void State::executeBare(Transaction const& _t, Address _sender)
 			}
 			catch (VMException const& _e)
 			{
-				cnote << "VM Exception: " << _e.description();
-				throw;
+				clog(StateChat) << "VM Exception: " << _e.description();
+			}
+			catch (Exception const& _e)
+			{
+				clog(StateChat) << "Exception in VM: " << _e.description();
+			}
+			catch (std::exception const& _e)
+			{
+				clog(StateChat) << "std::exception in VM: " << _e.what();
 			}
 		}
 	}
 	else
 	{
-#if ETH_SENDER_PAYS_SETUP
-		if (balance(_sender) < _t.value + fee)
-#else
-		if (_t.value < fee)
-#endif
-			throw NotEnoughCash();
-
 		Address newAddress = right160(_t.sha3());
 
 		if (isContractAddress(newAddress) || isNormalAddress(newAddress))
+		{
+			clog(StateChat) << "Contract address collision.";
 			throw ContractAddressCollision();
+		}
 
-		// All OK - set it up.
-		m_cache[newAddress] = AddressState(0, 0, AddressType::Contract);
+		// Increment associated nonce for sender.
+		noteSending(_sender);
+
+		// Pay out of sender...
+		subBalance(_sender, _t.value + fee);
+
+		// Set up new account...
+		m_cache[newAddress] = AddressState(_t.value, 0, AddressType::Contract);
 		auto& mem = m_cache[newAddress].memory();
 		for (uint i = 0; i < _t.data.size(); ++i)
 #ifdef __clang__
@@ -689,15 +712,12 @@ void State::executeBare(Transaction const& _t, Address _sender)
 #else
 			mem[i] = _t.data[i];
 #endif
-
-#if ETH_SENDER_PAYS_SETUP
-		subBalance(_sender, _t.value + fee);
-		addBalance(newAddress, _t.value);
-#else
-		subBalance(_sender, _t.value);
-		addBalance(newAddress, _t.value - fee);
-#endif
 	}
+
+#if ETH_DEBUG
+	commit();
+	clog(StateChat) << "New state:" << rootHash();
+#endif
 }
 
 void State::execute(Address _myAddress, Address _txSender, u256 _txValue, u256s const& _txData, u256* _totalFee)
