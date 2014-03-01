@@ -422,21 +422,29 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 
 		string a;
 		string b;
-		s_in >> a >> b;
+		string _c;
+		s_in >> a >> b >> _c;
     
     bytes a_buffer(32); 
     bytes b_buffer(32); 
+    bytes c_buffer(32); 
     
-    std::copy(a.begin(), a.end(), a_buffer.begin());
+    auto as = fromUserHex(a);
+    
+    std::copy(as.begin(), as.end(), a_buffer.begin());
     std::copy(b.begin(), b.end(), b_buffer.begin());
+    std::copy(_c.begin(), _c.end(), c_buffer.begin());
     
+    // u256 ua = h256(fromUserHex(a));
 		u256 ua = h256(a_buffer);
 		u256 ub = h256(b_buffer);
+		u256 uc = h256(c_buffer);
     
     
 		u256s txdata;
 		txdata.push_back(ua);
 		txdata.push_back(ub);
+		txdata.push_back(uc);
 		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
 
 		c.transact(us.secret(), dest, amount, txdata);
@@ -449,11 +457,11 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 			auto d = bc.details(h);
 			auto blockData = bc.block(h);
 			auto block = RLP(blockData);
-			s_out << d.number << ":\t" << h;
 			if (block[1].itemCount() > 0) {
+        s_out << d.number << ":\t" << h;
 				s_out << " (" << block[1].itemCount() << ")";
-			}
 			s_out << endl;
+			}
 		}
 	}
 	else if (cmd == "block:info")
@@ -505,6 +513,35 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	else if (cmd == "exit")
 	{
 		exit(0);
+	}
+	else if (cmd == "contract:view")
+	{
+		string address;
+		s_in >> address;
+		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+
+		unsigned numerics = 0;
+		bool memory = false;
+		u256 next = 0;
+
+    s_out << "[\n";
+		for (auto i : mem)
+		{
+      // todo - how to check if contract code has ended?
+      if ( i.first > 1000 ) {
+        if (next < i.first) // is new in the row 
+        {
+          if(memory) s_out << "\"},\n";
+          else memory = true;
+          s_out << "{\"" << noshowbase << hex << i.first << "\":\"" << noshowbase << i.second;
+        } else { // is successor
+          s_out << i.second ;
+        } 
+      }
+			next = i.first + 1;
+		}
+    s_out << "}\n]\n";
+		s_out << endl;
 	}
 	else
 	{
