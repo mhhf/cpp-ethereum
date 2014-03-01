@@ -228,6 +228,39 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_out << endl;
 		s_out << "Current address: " + asHex(us.address().asArray()) << endl;
 	}
+	else if (cmd == "compile")
+	{
+    
+		string filename;
+		s_in >> filename;
+    
+    std::ifstream ifs("contracts/"+filename);
+    std::string content( (std::istreambuf_iterator<char>(ifs) ),
+        (std::istreambuf_iterator<char>()    ) ); 
+    
+    u256s code = compileLisp(content);
+
+		s_out << "LISP: "<< content << "\n\nES CODE: " << disassemble(code) << endl;
+	}
+	else if (cmd == "contract:from")
+	{
+    
+		string filename;
+		s_in >> filename;
+    
+    std::ifstream ifs("contracts/"+filename);
+    std::string content( (std::istreambuf_iterator<char>(ifs) ),
+        (std::istreambuf_iterator<char>()    ) ); 
+    
+    u256s code = compileLisp(content);
+
+    
+		u256 amount = 1000000000000000000;
+		// s_in >> amount;
+
+		c.transact(us.secret(), Address(), amount, code);
+    
+	}
 	else if (cmd == "secret")
 	{
 		s_out << endl;
@@ -409,6 +442,47 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 
 		c.transact(us.secret(), Address(), amount, contract);
 	}
+	else if (cmd == "write:cmi")
+	{
+		u256 amount = 10000000000000000;
+    // TODO: hard code contract adress
+		string contractAddr;
+		s_in >> contractAddr;
+		Address dest = h160(fromUserHex(contractAddr));
+
+		//char buffer[256];
+		//s_in.getline(buffer, 256);
+		//string data(buffer);
+
+		string c_name;
+		string c_git1;
+		string c_git2;
+		string c_address;
+		s_in >> c_name  >> c_address >> c_git1 >> c_git2;
+    
+    bytes c_name_buffer(32); 
+    bytes c_git1_buffer(32); 
+    bytes c_git2_buffer(32); 
+    bytes c_address_buffer(32); 
+    
+    auto c_address_hash = fromUserHex(c_address);
+    
+    std::copy(c_address_hash.begin(), c_address_hash.end(), c_address_buffer.begin());
+    std::copy(c_name.begin(), c_name.end(), c_name_buffer.begin());
+    std::copy(c_git1.begin(), c_git1.end(), c_git1_buffer.begin());
+    std::copy(c_git2.begin(), c_git2.end(), c_git2_buffer.begin());
+    
+		u256s txdata;
+    
+		txdata.push_back(h256(c_name_buffer));
+		txdata.push_back(h256(c_address_buffer));
+		txdata.push_back(h256(c_git1_buffer));
+		txdata.push_back(h256(c_git2_buffer));
+    
+		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
+
+		c.transact(us.secret(), dest, amount, txdata);
+	}
 	else if (cmd == "contract:send")
 	{
 		u256 amount = 10000000000000000;
@@ -442,7 +516,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
     
     
 		u256s txdata;
-		txdata.push_back(ua);
+		txdata.push_back(100);
 		txdata.push_back(ub);
 		txdata.push_back(uc);
 		s_out << "sent: " << amount << " to " << contractAddr << " : " << txdata << endl;
