@@ -122,7 +122,7 @@ Main::Main(QWidget *parent) :
 	{
 		m_servers = QString::fromUtf8(_r->readAll()).split("\n", QString::SkipEmptyParts);
 	});
-	QNetworkRequest r(QUrl("http://www.ethereum.org/servers.poc3.txt"));
+	QNetworkRequest r(QUrl("http://www.ethereum.org/servers.poc" + QString(ADD_QUOTES(ETH_VERSION)).section('.', 1, 1) + ".txt"));
 	r.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1712.0 Safari/537.36");
 	m_webCtrl.get(r);
 	srand(time(0));
@@ -148,7 +148,8 @@ QString Main::pretty(eth::Address _a) const
 	if (h256 n = state().contractMemory(m_nameReg, (h256)(u256)(u160)_a))
 	{
 		std::string s((char const*)n.data(), 32);
-		s.resize(s.find_first_of('\0'));
+		if (s.find_first_of('\0') != string::npos)
+			s.resize(s.find_first_of('\0'));
 		return QString::fromStdString(s);
 	}
 	return QString();
@@ -181,7 +182,7 @@ Address Main::fromString(QString const& _a) const
 
 void Main::on_about_triggered()
 {
-	QMessageBox::about(this, "About AlethZero PoC-3", "AlethZero/v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM) "\nBy Gav Wood, 2014.\nBased on a design by Vitalik Buterin.\n\nTeam Ethereum++ includes: Eric Lombrozo, Marko Simovic, Alex Leverington, Tim Hughes and several others.");
+	QMessageBox::about(this, "About AlethZero PoC-" + QString(ADD_QUOTES(ETH_VERSION)).section('.', 1, 1), "AlethZero/v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM) "\nBy Gav Wood, 2014.\nBased on a design by Vitalik Buterin.\n\nTeam Ethereum++ includes: Eric Lombrozo, Marko Simovic, Alex Leverington, Tim Hughes and several others.");
 }
 
 void Main::writeSettings()
