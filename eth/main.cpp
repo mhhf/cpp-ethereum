@@ -242,7 +242,30 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 
 		s_out << "LISP: "<< content << "\n\nES CODE: " << disassemble(code) << endl;
 	}
-	else if (cmd == "contract:from")
+	else if (cmd == "contract:from:buffer")
+	{
+    
+		char buffer[256];
+		s_in.getline(buffer, 256);
+		string data(buffer);
+    
+		// string filename;
+		// s_in >> filename;
+    
+    // std::ifstream ifs("contracts/"+filename);
+    // std::string content( (std::istreambuf_iterator<char>(ifs) ),
+    //     (std::istreambuf_iterator<char>()    ) ); 
+    
+    u256s code = compileLisp(data);
+
+    
+		u256 amount = 1000000000000000000;
+		// s_in >> amount;
+
+		c.transact(us.secret(), Address(), amount, code);
+    
+	}
+	else if (cmd == "contract:from:file")
 	{
     
 		string filename;
