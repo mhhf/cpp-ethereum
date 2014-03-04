@@ -111,34 +111,60 @@ BSONObj getBSONContract(const Client& c, const Address& address)
 }
 
 
-void exportStateToMongoDB(mongo::DBClientConnection& db, Client& c)
+void exportBlock(mongo::DBClientConnection& db, Client& c)
+{
+
+}
+
+
+void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 {
 	auto const& bc = c.blockChain();
-	for (auto h = bc.currentHash(); h != bc.genesisHash(); h = bc.details(h).parent)
+
+	for (auto h = bc.currentHash(); h != lastBlock; h = bc.details(h).parent)
 	{
 		auto d = bc.details(h);
 		auto blockData = bc.block(h);
 		auto block = RLP(blockData);
 		BlockInfo info(blockData);
 
+		cout << "block: " << d.number << endl;
+
 		for (auto const& i : block[1])
 		{
 			Transaction tx(i.data());
+
+			// a new contract
 			if (!tx.receiveAddress) {
 
 				Address address = right160(tx.sha3());
-				db.insert("webeth.contracts", getBSONContract(c, address));
+				BSONObj contract = getBSONContract(c, address);
+				db.insert("webeth.contracts", contract);
+			}
+			else if (c.state().isContractAddress(tx.receiveAddress))
+			{
+				BSONObj contract = getBSONContract(c, tx.receiveAddress);
+				db.update("webeth.contracts", BSON("_id" << contract["_id"]), BSON("$set" << BSON("balance" << contract["balance"])));
+			}
+			else
+			{
+
 			}
 		}
 
 		BSONObjBuilder b;
 		b.append("_id", toString(h));
-		b.append("number", toString(d.number));
-		b.append("timestamp", toString(info.timestamp));
+		b.append("number", (long long)d.number); // this is actualy unigned long long
+		//b.appendNumber("number", (long long)d.number);
+		b.appendTimestamp("timestamp", (unsigned long long)info.timestamp);
 		BSONObj p = b.obj();
 		db.insert("webeth.blocks", p);
 	}
+
+
+	lastBlock = bc.currentHash();
 }
+
 
 void executeTransaction(Client& c, Transaction const& t)
 {
@@ -161,6 +187,9 @@ void synchronizeMongoDB(mongo::DBClientConnection& db, Client& c)
 			cout << obj.toString() << endl;
         }
 	}
+
+	// update the state
+	//exportStateToMongoDB(db, c);
 }
 
 
@@ -267,17 +296,29 @@ int main(int argc, char** argv)
 	cout << "Address: " << endl << asHex(us.address().asArray()) << endl;
 	c.startNetwork(listenPort, remoteHost, remotePort, mode, peers, publicIP, upnp);
 	eth::uint n = c.blockChain().details().number;
-	
-	
+
+
 	// connect to db
 	mongo::DBClientConnection db;
 	db.connect("localhost");
+
+
+	// get the latest block from the db
+	BSONObj lastBlock = db.findOne("webeth.blocks", Query().sort("number", -1)); // get the block with the highest number
+	h256 lastBlockId = c.blockChain().genesisHash();
+	if (lastBlock.hasField("_id")) {
+		lastBlockId = h256(fromUserHex(lastBlock["_id"].str()));
+		cout << "last exported block : " << lastBlockId << endl;
+	}
+	//h256 begin = bc.details(lastId).parent;
 	
+
 	while (true)
 	{
 		// check the database every 1s
-		synchronizeMongoDB(db, c);
+		updateMongoDB(db, c, lastBlockId);
 		this_thread::sleep_for(chrono::milliseconds(1000));
+		cout << "step" << endl;
 	}
 
 	return 0;
