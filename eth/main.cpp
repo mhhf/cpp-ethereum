@@ -617,7 +617,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		s_in >> address;
 		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
 
-		unsigned numerics = 0;
+//		unsigned numerics = 0;
 		bool memory = false;
 		u256 next = 0;
 
