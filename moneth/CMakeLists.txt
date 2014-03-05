@@ -36,7 +36,7 @@ target_link_libraries(moneth ethereum)
 target_link_libraries(moneth miniupnpc)
 target_link_libraries(moneth leveldb)
 target_link_libraries(moneth gmp)
-target_link_libraries(eth mongoclient)
+target_link_libraries(moneth mongoclient)
 
 install( TARGETS moneth DESTINATION bin )
 
