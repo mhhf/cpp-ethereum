@@ -6,6 +6,8 @@
 #include <libethereum/Dagger.h>
 #include <libethereum/Client.h>
 #include <libethereum/Instruction.h>
+#include <libethereum/PeerServer.h>
+#include "BuildInfo.h"
 #include "MainWin.h"
 #include "ui_Main.h"
 using namespace std;
@@ -29,12 +31,12 @@ using eth::Secret;
 using eth::Transaction;
 
 // functions
-using eth::asHex;
+using eth::toHex;
 using eth::assemble;
 using eth::compileLisp;
 using eth::disassemble;
 using eth::formatBalance;
-using eth::fromUserHex;
+using eth::fromHex;
 using eth::right160;
 using eth::simpleDebugOut;
 using eth::toLog2;
@@ -53,9 +55,6 @@ static void initUnits(QComboBox* _b)
 	_b->setCurrentIndex(6);
 }
 
-#define ADD_QUOTES_HELPER(s) #s
-#define ADD_QUOTES(s) ADD_QUOTES_HELPER(s)
-
 Main::Main(QWidget *parent) :
 	QMainWindow(parent),
 	ui(new Ui::Main)
@@ -64,44 +63,6 @@ Main::Main(QWidget *parent) :
 	ui->setupUi(this);
 	g_logPost = [=](std::string const& s, char const* c) { simpleDebugOut(s, c); ui->log->addItem(QString::fromStdString(s)); };
 	m_client.reset(new Client("AlethZero"));
-
-	/*
-	ui->librariesView->setModel(m_libraryMan);
-	ui->graphsView->setModel(m_graphMan);
-	setWindowIcon(QIcon(":/Noted.png"));
-
-	qmlRegisterSingletonType<TimeHelper>("com.llr", 1, 0, "Time", TimelineItem::constructTimeHelper);
-	qmlRegisterType<GraphItem>("com.llr", 1, 0, "Graph");
-	qmlRegisterType<CursorGraphItem>("com.llr", 1, 0, "CursorGraph");
-	qmlRegisterType<IntervalItem>("com.llr", 1, 0, "Interval");
-	qmlRegisterType<CursorItem>("com.llr", 1, 0, "Cursor");
-	qmlRegisterType<TimelinesItem>("com.llr", 1, 0, "Timelines");
-	qmlRegisterType<TimeLabelsItem>("com.llr", 1, 0, "TimeLabels");
-	qmlRegisterType<XLabelsItem>("com.llr", 1, 0, "XLabels");
-	qmlRegisterType<XScaleItem>("com.llr", 1, 0, "XScale");
-	qmlRegisterType<YLabelsItem>("com.llr", 1, 0, "YLabels");
-	qmlRegisterType<YScaleItem>("com.llr", 1, 0, "YScale");
-
-	m_view = new QQuickView();
-	QQmlContext* context = m_view->rootContext();
-	context->setContextProperty("libs", libs());
-	context->setContextProperty("compute", compute());
-	context->setContextProperty("data", data());
-	context->setContextProperty("graphs", graphs());
-	context->setContextProperty("audio", audio());
-	context->setContextProperty("view", view());
-	m_view->setSource(QUrl("qrc:/Noted.qml"));
-
-	QWidget* w = QWidget::createWindowContainer(m_view);
-	w->setAcceptDrops(true);
-	m_view->setResizeMode(QQuickView::SizeRootObjectToView);
-	ui->fullDisplay->insertWidget(0, w);
-	m_view->create();
-
-	m_timelinesItem = m_view->rootObject()->findChild<TimelinesItem*>("timelines");
-	qDebug() << m_view->rootObject();
-	*/
-
 
 	readSettings();
 	refresh();
@@ -118,14 +79,20 @@ Main::Main(QWidget *parent) :
 #if ETH_DEBUG
 	m_servers.append("192.168.0.10:30301");
 #else
-	connect(&m_webCtrl, &QNetworkAccessManager::finished, [&](QNetworkReply* _r)
+	int pocnumber = QString(ETH_QUOTED(ETH_VERSION)).section('.', 1, 1).toInt();
+	if (pocnumber == 3)
+		m_servers.push_back("54.201.28.117:30303");
+	else
 	{
-		m_servers = QString::fromUtf8(_r->readAll()).split("\n", QString::SkipEmptyParts);
-	});
-	QNetworkRequest r(QUrl("http://www.ethereum.org/servers.poc" + QString(ADD_QUOTES(ETH_VERSION)).section('.', 1, 1) + ".txt"));
-	r.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1712.0 Safari/537.36");
-	m_webCtrl.get(r);
-	srand(time(0));
+		connect(&m_webCtrl, &QNetworkAccessManager::finished, [&](QNetworkReply* _r)
+		{
+			m_servers = QString::fromUtf8(_r->readAll()).split("\n", QString::SkipEmptyParts);
+		});
+		QNetworkRequest r(QUrl("http://www.ethereum.org/servers.poc" + QString::number(pocnumber) + ".txt"));
+		r.setHeader(QNetworkRequest::UserAgentHeader, "Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/33.0.1712.0 Safari/537.36");
+		m_webCtrl.get(r);
+		srand(time(0));
+	}
 #endif
 
 	on_verbosity_sliderMoved();
@@ -175,14 +142,14 @@ Address Main::fromString(QString const& _a) const
 		if (h256 a = state().contractMemory(m_nameReg, n))
 			return right160(a);
 	if (_a.size() == 40)
-		return Address(fromUserHex(_a.toStdString()));
+		return Address(fromHex(_a.toStdString()));
 	else
 		return Address();
 }
 
 void Main::on_about_triggered()
 {
-	QMessageBox::about(this, "About AlethZero PoC-" + QString(ADD_QUOTES(ETH_VERSION)).section('.', 1, 1), "AlethZero/v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM) "\nBy Gav Wood, 2014.\nBased on a design by Vitalik Buterin.\n\nTeam Ethereum++ includes: Eric Lombrozo, Marko Simovic, Alex Leverington, Tim Hughes and several others.");
+	QMessageBox::about(this, "About AlethZero PoC-" + QString(ETH_QUOTED(ETH_VERSION)).section('.', 1, 1), QString("AlethZero/v" ETH_QUOTED(ETH_VERSION) "/" ETH_QUOTED(ETH_BUILD_TYPE) "/" ETH_QUOTED(ETH_BUILD_PLATFORM) "\n" ETH_QUOTED(ETH_COMMIT_HASH)) + (ETH_CLEAN_REPO ? "\nCLEAN" : "\n+ LOCAL CHANGES") + "\n\nBy Gav Wood, 2014.\nBased on a design by Vitalik Buterin.\n\nTeam Ethereum++ includes: Eric Lombrozo, Marko Simovic, Alex Leverington, Tim Hughes and several others.");
 }
 
 void Main::writeSettings()
@@ -242,7 +209,10 @@ void Main::readSettings()
 	ui->clientName->setText(s.value("clientName", "").toString());
 	ui->idealPeers->setValue(s.value("idealPeers", ui->idealPeers->value()).toInt());
 	ui->port->setValue(s.value("port", ui->port->value()).toInt());
-	ui->nameReg->setText(s.value("nameReg", "11f62328e131dbb05ce4c73a3de3c7ab1c84a163").toString());
+	if (s.value("nameReg").toString() == "11f62328e131dbb05ce4c73a3de3c7ab1c84a163")
+		s.remove("nameReg");
+	ui->nameReg->setText(s.value("nameReg", "8ff91e5b145a23ab1afef34f12587c18bd42aec0").toString());
+
 }
 
 void Main::on_nameReg_textChanged()
@@ -250,7 +220,7 @@ void Main::on_nameReg_textChanged()
 	string s = ui->nameReg->text().toStdString();
 	if (s.size() == 40)
 	{
-		m_nameReg = Address(fromUserHex(s));
+		m_nameReg = Address(fromHex(s));
 		refresh(true);
 	}
 }
@@ -504,7 +474,7 @@ void Main::on_ourAccounts_doubleClicked()
 {
 	auto hba = ui->ourAccounts->currentItem()->data(Qt::UserRole).toByteArray();
 	auto h = Address((byte const*)hba.data(), Address::ConstructFromPointer);
-	qApp->clipboard()->setText(QString::fromStdString(asHex(h.asArray())));
+	qApp->clipboard()->setText(QString::fromStdString(toHex(h.asArray())));
 }
 
 void Main::on_log_doubleClicked()
@@ -516,14 +486,14 @@ void Main::on_accounts_doubleClicked()
 {
 	auto hba = ui->accounts->currentItem()->data(Qt::UserRole).toByteArray();
 	auto h = Address((byte const*)hba.data(), Address::ConstructFromPointer);
-	qApp->clipboard()->setText(QString::fromStdString(asHex(h.asArray())));
+	qApp->clipboard()->setText(QString::fromStdString(toHex(h.asArray())));
 }
 
 void Main::on_contracts_doubleClicked()
 {
 	auto hba = ui->contracts->currentItem()->data(Qt::UserRole).toByteArray();
 	auto h = Address((byte const*)hba.data(), Address::ConstructFromPointer);
-	qApp->clipboard()->setText(QString::fromStdString(asHex(h.asArray())));
+	qApp->clipboard()->setText(QString::fromStdString(toHex(h.asArray())));
 }
 
 void Main::on_destination_textChanged()
@@ -584,10 +554,10 @@ void Main::on_net_triggered()
 {
 	ui->port->setEnabled(!ui->net->isChecked());
 	ui->clientName->setEnabled(!ui->net->isChecked());
-	string n = "AlethZero/v" ADD_QUOTES(ETH_VERSION);
+	string n = "AlethZero/v" ETH_QUOTED(ETH_VERSION);
 	if (ui->clientName->text().size())
 		n += "/" + ui->clientName->text().toStdString();
-	n +=  "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM);
+	n +=  "/" ETH_QUOTED(ETH_BUILD_TYPE) "/" ETH_QUOTED(ETH_BUILD_PLATFORM);
 	m_client->setClientVersion(n);
 	if (ui->net->isChecked())
 	{

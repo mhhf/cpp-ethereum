@@ -60,6 +60,20 @@ enum ClientWorkState
 	Deleted
 };
 
+class VersionChecker
+{
+public:
+	VersionChecker(std::string const& _dbPath, unsigned _protocolVersion);
+
+	void setOk();
+	bool ok() const { return m_ok; }
+
+private:
+	bool m_ok;
+	std::string m_path;
+	unsigned m_protocolVersion;
+};
+
 class Client
 {
 public:
@@ -111,9 +125,9 @@ public:
 	// Network stuff:
 
 	/// Get information on the current peer set.
-	std::vector<PeerInfo> peers() { return m_net ? m_net->peers() : std::vector<PeerInfo>(); }
+	std::vector<PeerInfo> peers();
 	/// Same as peers().size(), but more efficient.
-	size_t peerCount() const { return m_net ? m_net->peerCount() : 0; }
+	size_t peerCount() const;
 
 	/// Start the network subsystem.
 	void startNetwork(unsigned short _listenPort = 30303, std::string const& _remoteHost = std::string(), unsigned short _remotePort = 30303, NodeMode _mode = NodeMode::Full, unsigned _peers = 5, std::string const& _publicIP = std::string(), bool _upnp = true);
@@ -121,6 +135,8 @@ public:
 	void connect(std::string const& _seedHost, unsigned short _port = 30303);
 	/// Stop the network subsystem.
 	void stopNetwork();
+	/// Is the network subsystem up?
+	bool haveNetwork() { return !!m_net; }
 	/// Get access to the peer server object. This will be null if the network isn't online.
 	PeerServer* peerServer() const { return m_net.get(); }
 
@@ -134,6 +150,8 @@ public:
 	void startMining();
 	/// Stop mining.
 	void stopMining();
+	/// Are we mining now?
+	bool isMining() { return m_doMine; }
 	/// Check the progress of the mining.
 	MineProgress miningProgress() const { return m_mineProgress; }
 
@@ -141,6 +159,7 @@ private:
 	void work();
 
 	std::string m_clientVersion;		///< Our end-application client's name/version.
+	VersionChecker m_vc;				///< Dummy object to check & update the protocol version.
 	BlockChain m_bc;					///< Maintains block database.
 	TransactionQueue m_tq;				///< Maintains list of incoming transactions not yet on the block chain.
 	Overlay m_stateDB;					///< Acts as the central point for the state database, so multiple States can share it.

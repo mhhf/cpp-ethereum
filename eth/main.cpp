@@ -40,11 +40,9 @@
 #include "FileSystem.h"
 #include "Instruction.h"
 #include "RLP.h"
+#include "BuildInfo.h"
 using namespace std;
 using namespace eth;
-
-#define ADD_QUOTES_HELPER(s) #s
-#define ADD_QUOTES(s) ADD_QUOTES_HELPER(s)
 
 bool isTrue(std::string const& _m)
 {
@@ -83,8 +81,8 @@ void help()
 
 void version()
 {
-	cout << "eth version " << ADD_QUOTES(ETH_VERSION) << endl;
-	cout << "Build: " << ADD_QUOTES(ETH_BUILD_PLATFORM) << "/" << ADD_QUOTES(ETH_BUILD_TYPE) << endl;
+	cout << "eth version " << ETH_QUOTED(ETH_VERSION) << endl;
+	cout << "Build: " << ETH_QUOTED(ETH_BUILD_PLATFORM) << "/" << ETH_QUOTED(ETH_BUILD_TYPE) << endl;
 	exit(0);
 }
 
@@ -710,9 +708,9 @@ int main(int argc, char** argv)
 		else if ((arg == "-c" || arg == "--client-name") && i + 1 < argc)
 			clientName = argv[++i];
 		else if ((arg == "-a" || arg == "--address" || arg == "--coinbase-address") && i + 1 < argc)
-			coinbase = h160(fromUserHex(argv[++i]));
+			coinbase = h160(fromHex(argv[++i]));
 		else if ((arg == "-s" || arg == "--secret") && i + 1 < argc)
-			us = KeyPair(h256(fromUserHex(argv[++i])));
+			us = KeyPair(h256(fromHex(argv[++i])));
 		else if (arg == "-i" || arg == "--interactive")
 			interactive = true;
 		else if ((arg == "-d" || arg == "--path" || arg == "--db-path") && i + 1 < argc)
@@ -763,7 +761,7 @@ int main(int argc, char** argv)
 		clientName += "/";
 	}
 
-	Client c("Ethereum(++)/" + clientName + "v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM), coinbase, dbPath);
+	Client c("Ethereum(++)/" + clientName + "v" ETH_QUOTED(ETH_VERSION) "/" ETH_QUOTED(ETH_BUILD_TYPE) "/" ETH_QUOTED(ETH_BUILD_PLATFORM), coinbase, dbPath);
 
 	if (network_interactive)
 	{
@@ -798,7 +796,7 @@ int main(int argc, char** argv)
 	}
 	else
 	{
-		cout << "Address: " << endl << asHex(us.address().asArray()) << endl;
+		cout << "Address: " << endl << toHex(us.address().asArray()) << endl;
 		c.startNetwork(listenPort, remoteHost, remotePort, mode, peers, publicIP, upnp);
 		eth::uint n = c.blockChain().details().number;
 		if (mining)
