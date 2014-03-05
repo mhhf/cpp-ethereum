@@ -40,7 +40,7 @@
 #include "FileSystem.h"
 #include "Instruction.h"
 #include "RLP.h"
-#include "BuildInfo.h"
+//#include "BuildInfo.h"
 using namespace std;
 using namespace eth;
 
@@ -224,7 +224,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	else if (cmd == "address")
 	{
 		s_out << endl;
-		s_out << "Current address: " + asHex(us.address().asArray()) << endl;
+		s_out << "Current address: " + toHex(us.address().asArray()) << endl;
 	}
 	else if (cmd == "compile")
 	{
@@ -285,7 +285,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	else if (cmd == "secret")
 	{
 		s_out << endl;
-		s_out << "Current secret: " + asHex(us.secret().asArray()) << endl;
+		s_out << "Current secret: " + toHex(us.secret().asArray()) << endl;
 	}
 	else if (cmd == "balance")
 	{
@@ -317,7 +317,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	{
 		string owner;
 		s_in >> owner;
-		u256 balance = c.state().balance(h160(fromUserHex(owner)));
+		u256 balance = c.state().balance(h160(fromHex(owner)));
 		s_out << endl;
 		s_out << "Current balance: ";
 		s_out << formatBalance(balance) << endl;
@@ -329,7 +329,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	{
 		string address;
 		s_in >> address;
-		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+		auto mem = c.state().contractMemory(h160(fromHex(address)));
 
 		unsigned numerics = 0;
 		bool unexpectedNumeric = false;
@@ -379,7 +379,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		string address;
 		s_in >> address;
 
-		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+		auto mem = c.state().contractMemory(h160(fromHex(address)));
 		for (auto i : mem)
 		{
 			s_out << i.first << "\t" << i.second << endl;
@@ -391,8 +391,8 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		string rechex;
 		u256 amount;
 		s_in >> sechex >> rechex >> amount;
-		Secret secret = h256(fromUserHex(sechex));
-		Address dest = h160(fromUserHex(rechex));
+		Secret secret = h256(fromHex(sechex));
+		Address dest = h160(fromHex(rechex));
 		c.transact(secret, dest, amount);
 	}
 	else if (cmd == "send")
@@ -400,7 +400,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		string rechex;
 		u256 amount;
 		s_in >> rechex >> amount;
-		Address dest = h160(fromUserHex(rechex));
+		Address dest = h160(fromHex(rechex));
 		c.transact(us.secret(), dest, amount);
 	}
 	else if (cmd == "peers")
@@ -447,7 +447,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	else if (cmd == "address:new")
 	{
 		us = KeyPair::create();
-		s_out << asHex(us.address().asArray()) << endl;
+		s_out << toHex(us.address().asArray()) << endl;
 	}
 	else if (cmd == "contract:create")
 	{
@@ -469,7 +469,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
     // TODO: hard code contract adress
 		string contractAddr;
 		s_in >> contractAddr;
-		Address dest = h160(fromUserHex(contractAddr));
+		Address dest = h160(fromHex(contractAddr));
 
 		//char buffer[256];
 		//s_in.getline(buffer, 256);
@@ -486,7 +486,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
     bytes c_git2_buffer(32); 
     bytes c_address_buffer(32); 
     
-    auto c_address_hash = fromUserHex(c_address);
+	auto c_address_hash = fromHex(c_address);
     
     std::copy(c_address_hash.begin(), c_address_hash.end(), c_address_buffer.begin());
     std::copy(c_name.begin(), c_name.end(), c_name_buffer.begin());
@@ -509,7 +509,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 		u256 amount = 10000000000000000;
 		string contractAddr;
 		s_in >> contractAddr;
-		Address dest = h160(fromUserHex(contractAddr));
+		Address dest = h160(fromHex(contractAddr));
 
 		//char buffer[256];
 		//s_in.getline(buffer, 256);
@@ -524,13 +524,13 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
     bytes b_buffer(32); 
     bytes c_buffer(32); 
     
-    auto as = fromUserHex(a);
+	auto as = fromHex(a);
     
     std::copy(as.begin(), as.end(), a_buffer.begin());
     std::copy(b.begin(), b.end(), b_buffer.begin());
     std::copy(_c.begin(), _c.end(), c_buffer.begin());
     
-    // u256 ua = h256(fromUserHex(a));
+    // u256 ua = h256(fromHex(a));
 		u256 ua = h256(a_buffer);
 		u256 ub = h256(b_buffer);
 		u256 uc = h256(c_buffer);
@@ -613,7 +613,7 @@ void runCommand(Client& c, KeyPair& us, std::istream& s_in, std::ostream& s_out)
 	{
 		string address;
 		s_in >> address;
-		auto mem = c.state().contractMemory(h160(fromUserHex(address)));
+		auto mem = c.state().contractMemory(h160(fromHex(address)));
 
 //		unsigned numerics = 0;
 		bool memory = false;

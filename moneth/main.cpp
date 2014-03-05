@@ -169,8 +169,8 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 void executeTransaction(Client& c, Transaction const& t)
 {
 	/*
-	Secret secret = h256(fromUserHex(sechex));
-	Address dest = h160(fromUserHex(rechex));
+	Secret secret = h256(fromHex(sechex));
+	Address dest = h160(fromHex(rechex));
 	c.transact(secret, dest, amount);
 	*/
 }
@@ -257,9 +257,9 @@ int main(int argc, char** argv)
 		else if ((arg == "-c" || arg == "--client-name") && i + 1 < argc)
 			clientName = argv[++i];
 		else if ((arg == "-a" || arg == "--address" || arg == "--coinbase-address") && i + 1 < argc)
-			coinbase = h160(fromUserHex(argv[++i]));
+			coinbase = h160(fromHex(argv[++i]));
 		else if ((arg == "-s" || arg == "--secret") && i + 1 < argc)
-			us = KeyPair(h256(fromUserHex(argv[++i])));
+			us = KeyPair(h256(fromHex(argv[++i])));
 		else if ((arg == "-d" || arg == "--path" || arg == "--db-path") && i + 1 < argc)
 			dbPath = argv[++i];
 		else if ((arg == "-v" || arg == "--verbosity") && i + 1 < argc)
@@ -293,7 +293,7 @@ int main(int argc, char** argv)
 
 	Client c("Ethereum(++)/" + clientName + "v" ADD_QUOTES(ETH_VERSION) "/" ADD_QUOTES(ETH_BUILD_TYPE) "/" ADD_QUOTES(ETH_BUILD_PLATFORM), coinbase, dbPath);
 
-	cout << "Address: " << endl << asHex(us.address().asArray()) << endl;
+	cout << "Address: " << endl << toHex(us.address().asArray()) << endl;
 	c.startNetwork(listenPort, remoteHost, remotePort, mode, peers, publicIP, upnp);
 	eth::uint n = c.blockChain().details().number;
 
@@ -307,7 +307,7 @@ int main(int argc, char** argv)
 	BSONObj lastBlock = db.findOne("webeth.blocks", Query().sort("number", -1)); // get the block with the highest number
 	h256 lastBlockId = c.blockChain().genesisHash();
 	if (lastBlock.hasField("_id")) {
-		lastBlockId = h256(fromUserHex(lastBlock["_id"].str()));
+		lastBlockId = h256(fromHex(lastBlock["_id"].str()));
 		cout << "last exported block : " << lastBlockId << endl;
 	}
 	//h256 begin = bc.details(lastId).parent;
