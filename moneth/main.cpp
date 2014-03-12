@@ -141,14 +141,23 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 				BSONObj contract = getBSONContract(c, address);
 				db.insert("webeth.contracts", contract);
 			}
-			else if (c.state().isContractAddress(tx.receiveAddress))
+			else 
 			{
-				BSONObj contract = getBSONContract(c, tx.receiveAddress);
-				db.update("webeth.contracts", BSON("_id" << contract["_id"]), BSON("$set" << BSON("balance" << contract["balance"])));
-			}
-			else
-			{
+				if (c.state().isContractAddress(tx.receiveAddress))
+				{
+					BSONObj contract = getBSONContract(c, tx.receiveAddress);
+					db.update("webeth.contracts", BSON("_id" << contract["_id"]), BSON("$set" << BSON("balance" << contract["balance"])));
+				}
 
+				BSONObjBuilder transaction;
+				transaction.append("sender", toString(tx.safeSender()));
+				transaction.append("receiver", toString(tx.receiveAddress));
+				transaction.append("value", toString(tx.value));
+				transaction.append("nonce", toString(tx.nonce));
+
+				BSON
+
+				//db.insert("webeth.transactions", transaction);
 			}
 		}
 
@@ -175,21 +184,38 @@ void executeTransaction(Client& c, Transaction const& t)
 	*/
 }
 
-void synchronizeMongoDB(mongo::DBClientConnection& db, Client& c)
+void executeRequest(Client& c, const Secret& secret, const string& contractAddr, const string& name, const string& value)
+{
+	// the amount to pay for the transaction
+	const u256 amount = 10000000000000000;
+
+	Address dest = h160(contractAddr, h160::FromHex);
+
+	u256s txdata;
+	txdata.push_back(h256(name, h256::FromHex));
+	txdata.push_back(h256(value, h256::FromHex));
+
+	c.transact(secret, dest, amount, txdata);
+}
+
+void executeRequestsMongoDB(mongo::DBClientConnection& db, Client& c, const Secret& secret)
 {
 	// check if there are any requested transactions
-	static const char * requests = "webeth.requests";
-	if(db.count(requests) > 0) 
+	static const char * requests = "webeth.newnamerequest";
+	if(db.count(requests) > 0)
 	{
 		auto_ptr<DBClientCursor> cursor = db.query(requests, BSONObj());
 		while ( cursor->more() ) {
             BSONObj obj = cursor->next();
+
+			string address = obj["address"];
+			string name = obj["name"];
+			string value = obj["value"];
+
+			executeRequest(c, secret, address, name, value);
 			cout << obj.toString() << endl;
         }
 	}
-
-	// update the state
-	//exportStateToMongoDB(db, c);
 }
 
 
@@ -317,6 +343,7 @@ int main(int argc, char** argv)
 	{
 		// check the database every 1s
 		updateMongoDB(db, c, lastBlockId);
+		executeRequestsMongoDB(db, c, us.secret());
 		this_thread::sleep_for(chrono::milliseconds(1000));
 		cout << "step" << endl;
 	}
