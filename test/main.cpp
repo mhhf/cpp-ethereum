@@ -26,6 +26,7 @@ int trieTest();
 int rlpTest();
 int daggerTest();
 int cryptoTest();
+int webcryptoTest();
 int stateTest();
 int vmTest();
 int hexPrefixTest();
@@ -43,11 +44,12 @@ int main(int, char**)
 	std::cout << sha3(s.out()) << std::endl;*/
 
 	int r = 0;
-	r += hexPrefixTest();
-	r += rlpTest();
-	r += trieTest();
-	r += vmTest();
-	r += cryptoTest();	// TODO: Put in tests repo.
+	//	r += hexPrefixTest();
+	//	r += rlpTest();
+	//r += trieTest();
+	//r += vmTest();
+	//r += cryptoTest();	// TODO: Put in tests repo.
+	r += webcryptoTest();
 //	r += daggerTest();
 //	r += stateTest();
 //	r += peerTest(argc, argv);
