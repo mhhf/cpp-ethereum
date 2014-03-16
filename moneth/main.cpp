@@ -102,7 +102,7 @@ h256 fromHexToH256(const string& s)
 {
 	h256 result;
 	bytes b = fromHex(s);
-	memcpy(result.data(), b.data(), std::min<uint>(b.size(), result.size));
+	memcpy(result.data(), b.data(), std::min<uint>(b.size(), (uint)result.size));
 	return result;
 }
 
