@@ -84,7 +84,7 @@ public:
 	~Client();
 
 	/// Executes the given transaction.
-	void transact(Secret _secret, Address _dest, u256 _amount, u256s _data = u256s());
+	h256 transact(Secret _secret, Address _dest, u256 _amount, u256s _data = u256s());
 
 	/// Requires transactions involving this address be queued for inspection.
 	void setInterest(Address _dest);

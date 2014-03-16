@@ -131,7 +131,7 @@ void Client::stopMining()
 	m_doMine = false;
 }
 
-void Client::transact(Secret _secret, Address _dest, u256 _amount, u256s _data)
+h256 Client::transact(Secret _secret, Address _dest, u256 _amount, u256s _data)
 {
 	lock_guard<recursive_mutex> l(m_lock);
 	Transaction t;
@@ -143,6 +143,7 @@ void Client::transact(Secret _secret, Address _dest, u256 _amount, u256s _data)
 	cnote << "New transaction " << t;
 	m_tq.attemptImport(t.rlp());
 	m_changed = true;
+	return t.sha3();
 }
 
 void Client::work()
