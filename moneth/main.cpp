@@ -208,6 +208,10 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 				Address address = right160(tx.sha3());
 				BSONObj contract = getBSONContract(c, address);
 				db.insert("webeth.contracts", contract);
+
+				// check if there is code for the contract
+				db.update("webeth.code", BSON("address" << toString(address)),
+					BSON("$set" << BSON("status" << "ready")));
 			}
 			else 
 			{
@@ -288,6 +292,33 @@ void executeRequestsMongoDB(mongo::DBClientConnection& db, Client& c, const Secr
 			}
         }
 		db.dropCollection(requests);
+	}
+}
+
+void executeContractCreateRequestMongoDB(mongo::DBClientConnection& db, Client& c, const Secret& secret)
+{
+	std::vector<BSONObj> requests;
+	db.findN(requests, "webeth.code", BSON("status" << "new"), 10);
+	cout << "found: " << requests.size() << endl;
+
+	for (size_t i = 0; i < requests.size(); i++)
+	{
+		const BSONObj& obj = requests[i];
+		if (obj.hasField("code"))
+		{
+			string code = obj["code"].str();
+
+			u256s asm_code = compileLisp(code);
+			u256 amount = 10000000000000000;
+
+			Address address = right160(c.transact(secret, Address(), amount, asm_code));
+			cout << "contract address: " << address << endl;
+
+			db.update("webeth.code",
+				BSON("_id" << obj["_id"]),
+				BSON("$set" << BSON("status" << "pending" << "address" << toString(address)))
+				);
+		}
 	}
 }
 
@@ -416,6 +447,7 @@ int main(int argc, char** argv)
 	while (true)
 	{
 		executeRequestsMongoDB(db, c, us.secret());
+		executeContractCreateRequestMongoDB(db, c, us.secret());
 		if (c.changed())
 		{
 			// check the database every 1s
