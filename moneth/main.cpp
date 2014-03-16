@@ -90,6 +90,21 @@ void version()
 	exit(0);
 }
 
+template<typename T>
+string toHexStr(const T& s)
+{
+	ostringstream ss;
+	ss << showbase << hex << s;
+	return ss.str();
+}
+
+h256 fromHexToH256(const string& s)
+{
+	h256 result;
+	bytes b = fromHex(s);
+	memcpy(result.data(), b.data(), std::min<uint>(b.size(), result.size));
+	return result;
+}
 
 BSONObj getBSONContract(const Client& c, const Address& address)
 {
@@ -99,14 +114,67 @@ BSONObj getBSONContract(const Client& c, const Address& address)
 	u256 contract_balance = c.state().balance(address);
 	contract.append("balance", toString(contract_balance));
 
+	BSONObjBuilder contract_code;
 	BSONObjBuilder contract_memory;
 	auto mem = c.state().contractMemory(address);
+
+	unsigned numerics = 0;
+	bool unexpectedNumeric = false;
+	u256 next = 0;
+
 	for (auto i : mem)
 	{
-		contract_memory.append(toString(i.first), toString(i.second));
+		//contract_memory.append(toString(i.first), toString(i.second));
+
+		if (next < i.first)
+		{
+			unsigned j;
+			for (j = 0; j <= numerics && next + j < i.first; ++j) {
+				//s_out << (j < numerics || unexpectedNumeric ? " 0" : " STOP");
+				//contract_code.append(toString(toHex(i.first)), (j < numerics || unexpectedNumeric ? " 0" : " STOP"));
+				if (!unexpectedNumeric) {
+					cout << "[c] " << toHexStr(next + j) << " - " << (j < numerics ? "0x0" : "STOP") << endl;
+					contract_code.append(toHexStr(next + j), (j < numerics ? "0x0" : "STOP"));
+				}
+			}
+			unexpectedNumeric = false;
+			numerics -= min(numerics, j);
+			if (next + j < i.first) {
+				//s_out << " ...\n@" << showbase << hex << i.first << showbase << dec << "\t";
+			}
+		}
+		else if (!next)
+		{
+			//s_out << "@" << showbase << hex << i.first << showbase << dec << "\t";
+		}
+
+		auto iit = c_instructionInfo.find((Instruction)(unsigned)i.second);
+		if (numerics || iit == c_instructionInfo.end() || (u256)(unsigned)iit->first != i.second)	// not an instruction or expecting an argument...
+		{
+			if (numerics) {
+				numerics--;
+				cout << "[c] " << toHexStr(i.first) << " - " << toHexStr(i.second) << endl;
+				contract_code.append(toHexStr(i.first), toHexStr(i.second));
+			}
+			else {
+				unexpectedNumeric = true;
+				cout << "[m] " << toHexStr(i.first) << " - " << toHexStr(i.second) << endl;
+				contract_memory.append(toHexStr(i.first), toHexStr(i.second));
+			}
+		}
+		else // print commands
+		{
+			InstructionInfo const& ii = iit->second;
+			//s_out << " " << ii.name;
+			cout << "[c] " << toHexStr(i.first) << " - " << ii.name << endl;
+			contract_code.append(toHexStr(i.first), ii.name);
+			numerics = ii.additional; // command has some parameters
+		}
+		next = i.first + 1;
 	}
 
 	contract.append("memory", contract_memory.obj());
+	contract.append("code", contract_code.obj());
 	return contract.obj();
 }
 
@@ -146,7 +214,10 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 				if (c.state().isContractAddress(tx.receiveAddress))
 				{
 					BSONObj contract = getBSONContract(c, tx.receiveAddress);
-					db.update("webeth.contracts", BSON("_id" << contract["_id"]), BSON("$set" << BSON("balance" << contract["balance"])));
+					db.update("webeth.contracts", 
+						BSON("_id" << contract["_id"]), 
+						BSON("$set" << BSON("balance" << contract["balance"] << "memory" << contract["memory"] << "code" << contract["code"]))
+						);
 				}
 
 				BSONObjBuilder transaction;
@@ -154,10 +225,7 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 				transaction.append("receiver", toString(tx.receiveAddress));
 				transaction.append("value", toString(tx.value));
 				transaction.append("nonce", toString(tx.nonce));
-
-				BSON
-
-				//db.insert("webeth.transactions", transaction);
+				db.insert("webeth.transactions", transaction.obj());
 			}
 		}
 
@@ -192,8 +260,9 @@ void executeRequest(Client& c, const Secret& secret, const string& contractAddr,
 	Address dest = h160(contractAddr, h160::FromHex);
 
 	u256s txdata;
-	txdata.push_back(h256(name, h256::FromHex));
-	txdata.push_back(h256(value, h256::FromHex));
+	txdata.push_back(fromHexToH256(name));
+	txdata.push_back(fromHexToH256(value));
+	cout << txdata << endl;
 
 	c.transact(secret, dest, amount, txdata);
 }
@@ -207,14 +276,18 @@ void executeRequestsMongoDB(mongo::DBClientConnection& db, Client& c, const Secr
 		auto_ptr<DBClientCursor> cursor = db.query(requests, BSONObj());
 		while ( cursor->more() ) {
             BSONObj obj = cursor->next();
+			
+			if (obj.hasField("address") && obj.hasField("name") && obj.hasField("value"))
+			{
+				string address = obj["address"].str();
+				string name = obj["name"].str();
+				string value = obj["value"].str();
 
-			string address = obj["address"];
-			string name = obj["name"];
-			string value = obj["value"];
-
-			executeRequest(c, secret, address, name, value);
-			cout << obj.toString() << endl;
+				executeRequest(c, secret, address, name, value);
+				cout << "request: " << obj.toString() << endl;
+			}
         }
+		db.dropCollection(requests);
 	}
 }
 
@@ -240,8 +313,9 @@ int main(int argc, char** argv)
 	KeyPair us = KeyPair::create();
 	Address coinbase = us.address();
 
-	string configFile = getDataDir() + "/config.rlp";
+	string configFile = getDataDir() + "/moent_config.rlp";
 	bytes b = contents(configFile);
+	cout << "read config: " << configFile << endl;
 
 	if (b.size())
 	{
@@ -341,11 +415,14 @@ int main(int argc, char** argv)
 
 	while (true)
 	{
-		// check the database every 1s
-		updateMongoDB(db, c, lastBlockId);
 		executeRequestsMongoDB(db, c, us.secret());
+		if (c.changed())
+		{
+			// check the database every 1s
+			updateMongoDB(db, c, lastBlockId);
+			cout << "step" << endl;
+		}
 		this_thread::sleep_for(chrono::milliseconds(1000));
-		cout << "step" << endl;
 	}
 
 	return 0;
