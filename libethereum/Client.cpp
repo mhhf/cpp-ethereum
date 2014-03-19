@@ -146,6 +146,16 @@ h256 Client::transact(Secret _secret, Address _dest, u256 _amount, u256s _data)
 	return t.sha3();
 }
 
+h256 Client::transact(Transaction t, Address _src)
+{
+	lock_guard<recursive_mutex> l(m_lock);
+	t.nonce = m_postMine.transactionsFrom(_src);
+	cnote << "New transaction " << t;
+	m_tq.attemptImport(t.rlp());
+	m_changed = true;
+	return t.sha3();
+}
+
 void Client::work()
 {
 	bool changed = false;

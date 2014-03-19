@@ -106,6 +106,15 @@ h256 fromHexToH256(const string& s)
 	return result;
 }
 
+h256 fromHexToH256LittleEndian(const string& s)
+{
+	h256 result;
+	bytes b = fromHex(s);
+	assert(result.size >= b.size());
+	memcpy(result.data() + result.size - b.size(), b.data(), b.size());
+	return result;
+}
+
 BSONObj getBSONContract(const Client& c, const Address& address)
 {
 	BSONObjBuilder contract;
@@ -179,9 +188,20 @@ BSONObj getBSONContract(const Client& c, const Address& address)
 }
 
 
-void exportBlock(mongo::DBClientConnection& db, Client& c)
+void exportPending(mongo::DBClientConnection& db, Client& c)
 {
+	db.dropCollection("webeth.pending");
 
+	for (Transaction const& tx : c.pending())
+	{
+		BSONObjBuilder transaction;
+		transaction.append("sender", toString(tx.safeSender()));
+		transaction.append("receiver", toString(tx.receiveAddress));
+		transaction.append("value", toString(tx.value));
+		transaction.append("nonce", toString(tx.nonce));
+		transaction.append("iscontract", c.state().isContractAddress(tx.receiveAddress));
+		db.insert("webeth.pending", transaction.obj());
+	}
 }
 
 
@@ -197,6 +217,8 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 		BlockInfo info(blockData);
 
 		cout << "block: " << d.number << endl;
+
+		BSONArrayBuilder transaction_array;
 
 		for (auto const& i : block[1])
 		{
@@ -218,26 +240,66 @@ void updateMongoDB(mongo::DBClientConnection& db, Client& c, h256& lastBlock)
 				if (c.state().isContractAddress(tx.receiveAddress))
 				{
 					BSONObj contract = getBSONContract(c, tx.receiveAddress);
-					db.update("webeth.contracts", 
+					db.update("webeth.contracts",
 						BSON("_id" << contract["_id"]), 
 						BSON("$set" << BSON("balance" << contract["balance"] << "memory" << contract["memory"] << "code" << contract["code"]))
 						);
 				}
 
+
 				BSONObjBuilder transaction;
+				transaction.genOID();
 				transaction.append("sender", toString(tx.safeSender()));
 				transaction.append("receiver", toString(tx.receiveAddress));
 				transaction.append("value", toString(tx.value));
 				transaction.append("nonce", toString(tx.nonce));
-				db.insert("webeth.transactions", transaction.obj());
+				transaction.append("block", toString(h));
+				transaction.appendTimestamp("timestamp", (unsigned long long)info.timestamp);
+				
+				BSONObj txo = transaction.obj();
+				transaction_array.append(txo["_id"]);
+				db.insert("webeth.transactions", txo);
+
+				u256 receiver_balance = c.state().balance(tx.receiveAddress);
+				if (db.count("webeth.address", BSON("_id" << toString(tx.receiveAddress))) > 0) {
+					db.update("webeth.address",
+						BSON("_id" << toString(tx.receiveAddress)),
+						BSON("$set" << BSON("balance" << toString(receiver_balance)))
+						);
+				}
+				else
+				{
+					BSONObjBuilder address_receiver;
+					address_receiver.append("_id", toString(tx.receiveAddress));
+					address_receiver.append("balance", toString(receiver_balance));
+					db.insert("webeth.address", address_receiver.obj());
+				}
+
+			}
+
+			u256 sender_balance = c.state().balance(tx.safeSender());
+			if (db.count("webeth.address", BSON("_id" << toString(tx.safeSender()))) > 0) {
+				db.update("webeth.address",
+					BSON("_id" << toString(tx.safeSender())),
+					BSON("$set" << BSON("balance" << toString(sender_balance)))
+					);
+			}
+			else
+			{
+				BSONObjBuilder address_sender;
+				address_sender.append("_id", toString(tx.safeSender()));
+				address_sender.append("balance", toString(sender_balance));
+				db.insert("webeth.address", address_sender.obj());
 			}
 		}
+
 
 		BSONObjBuilder b;
 		b.append("_id", toString(h));
 		b.append("number", (long long)d.number); // this is actualy unigned long long
 		//b.appendNumber("number", (long long)d.number);
 		b.appendTimestamp("timestamp", (unsigned long long)info.timestamp);
+		b.appendArray("transactions", transaction_array.obj());
 		BSONObj p = b.obj();
 		db.insert("webeth.blocks", p);
 	}
@@ -299,7 +361,7 @@ void executeContractCreateRequestMongoDB(mongo::DBClientConnection& db, Client& 
 {
 	std::vector<BSONObj> requests;
 	db.findN(requests, "webeth.code", BSON("status" << "new"), 10);
-	cout << "found: " << requests.size() << endl;
+	cout << "[webeth.code] found: " << requests.size() << endl;
 
 	for (size_t i = 0; i < requests.size(); i++)
 	{
@@ -319,6 +381,62 @@ void executeContractCreateRequestMongoDB(mongo::DBClientConnection& db, Client& 
 				BSON("$set" << BSON("status" << "pending" << "address" << toString(address)))
 				);
 		}
+	}
+}
+
+void executeTransactionRequestMongoDB(mongo::DBClientConnection& db, Client& c, const Secret& secret)
+{
+	// check if there are any requested transactions
+	static const char * requests = "webeth.transactionrequest";
+	cout << "[webeth.transactionrequest] found: " << db.count(requests) << endl;
+
+	if (db.count(requests) > 0)
+	{
+		auto_ptr<DBClientCursor> cursor = db.query(requests, BSONObj());
+		while (cursor->more()) {
+			BSONObj obj = cursor->next();
+
+			if (obj.hasField("receiveAddress") &&
+				obj.hasField("fromAddress") &&
+				obj.hasField("value") &&
+				obj.hasField("data") &&
+				obj.hasField("vrs"))
+			{
+				string receiveAddress = obj["receiveAddress"].str();
+				string fromAddress = obj["fromAddress"].str();
+				string value = obj["value"].str();
+				vector<BSONElement> data = obj["data"].Array();
+				BSONObj vrs = obj["vrs"].Obj();
+
+				if (value.size() % 2 != 0)
+				{
+					cout << "[webeth.transactionrequest] invalide value: uneven number of chars." << endl;
+					continue;
+				}
+
+				Transaction t;
+				t.receiveAddress = Address(fromHex(receiveAddress));
+				t.value = u256(fromHexToH256LittleEndian(value));
+
+				for (auto i : data)
+				{
+					t.data.push_back(u256(fromHexToH256(i.str())));
+				}
+
+				t.vrs.v = fromHex(vrs["v"].str())[0];
+				t.vrs.r = u256(fromHexToH256(vrs["r"].str()));
+				t.vrs.s = u256(fromHexToH256(vrs["s"].str()));
+
+				Address from = Address(fromHex(fromAddress));
+
+				c.transact(t, from);
+			}
+			else
+			{
+				cout << "[webeth.transactionrequest] invalide transaction: some fields are mising." << endl;
+			}
+		}
+		db.dropCollection(requests);
 	}
 }
 
@@ -448,6 +566,10 @@ int main(int argc, char** argv)
 	{
 		executeRequestsMongoDB(db, c, us.secret());
 		executeContractCreateRequestMongoDB(db, c, us.secret());
+		executeTransactionRequestMongoDB(db, c, us.secret());
+
+		exportPending(db, c);
+
 		if (c.changed())
 		{
 			// check the database every 1s
